@@ -26,7 +26,7 @@ sub test ($$) {
 }
 
 sub bail {
-  for ($current+1..COUNT) {
+  for ($current+1..LAST) {
     print "not ok $_\n";
   }
   exit 0;
@@ -72,7 +72,7 @@ test(12,@features);
 test(13,grep {$_->reference} @features);
 
 # at least one of the features should be "CHROMOSOME_III"
-my ($i) = grep {$_ eq 'CHROMOSOME_III'} @features;
+my ($i) = grep {$_ eq 'III'} @features;
 test(14,$i);
 bail unless $i;
 

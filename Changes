@@ -1,5 +1,8 @@
 Revision history for Perl extension Bio::Das
 
+0.18	Wed Mar 27 16:29:09 EST 2002
+	- Fixed bug in test script to accomodate changes in WormBase server.
+
 0.1   Tue Mar  6 11:45:16 EST 2001
 	- first released version
 
