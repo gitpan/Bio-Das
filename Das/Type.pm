@@ -10,7 +10,8 @@ sub new {
   my ($id,$method,$category) = @_;
   return bless {id=>$id,
 		method=>$method,
-		category=>$category},$class;
+		category=>$category
+	       },$class;
 }
 sub id   {
   my $self = shift;
@@ -36,10 +37,22 @@ sub category {
   $self->{category} = shift if @_;
   $d;
 }
+sub count {
+  my $self = shift;
+  my $d = $self->{count};
+  $self->{count} = shift if @_;
+  $d;
+}
 sub reference {
   my $self = shift;
   my $d = $self->{reference};
   $self->{reference} = shift if @_;
+  $d;
+}
+sub source {
+  my $self = shift;
+  my $d = $self->{source};
+  $self->{source} = shift if @_;
   $d;
 }
 sub label {
@@ -50,7 +63,7 @@ sub label {
 }
 sub toString {
   my $self = shift;
-  $self->id || $self->label || overload::StrVal($self);
+  $self->id || $self->label;
 }
 
 sub complete {

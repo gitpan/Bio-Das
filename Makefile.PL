@@ -5,7 +5,9 @@ WriteMakefile(
 	      NAME	 => 'Bio::Das',
 	      VERSION_FROM => 'Das.pm', # finds $VERSION
 	      PREREQ_PM    => {
-			       XML::Parser => 1.0,
-			       LWP         => 5.0,
+			       Compress::Zlib => 1.0,
+			       HTML::Parser => 3.0,
+			       LWP          => 5.0,
+			       MIME::Base64 => 2.12,
 			      }
 	     );

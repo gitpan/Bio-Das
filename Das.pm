@@ -1,53 +1,59 @@
 package Bio::Das;
+# $Id: Das.pm,v 1.14 2002/10/25 19:20:09 lstein Exp $
+
+# prototype parallel-fetching Das
 
 use strict;
-use Carp 'croak';
+use Bio::Das::HTTP::Fetch;
+use Bio::Das::Request::Dsn;    # bring in dsn  parser
+use Bio::Das::Request::Types;  # bring in type parser
+use Bio::Das::Request::Dnas;
+use Bio::Das::Request::Features;
+use Bio::Das::Request::Entry_points;
+use Bio::Das::Util 'rearrange';
+use Carp;
 
-use URI::URL;
-use URI::Escape qw(uri_escape uri_unescape);
-use HTTP::Request::Common;
-use LWP::UserAgent;
+use IO::Socket;
+use IO::Select;
 
-use Bio::Das::Util;  # for rearrange()
-use Bio::Das::Segment;
-use Bio::Das::Stylesheet;
-use Bio::Das::Source;
-use constant FORCE_GET=> 0;
-
-#use overload '""' => 'toString';
-
-use vars qw($VERSION @ISA %VALID_TYPE);
-@ISA       = qw();
-$VERSION = '0.20';
-
-*source = \&dsn;
-
-%VALID_TYPE = map {$_=>1} qw(dsn entry_points dna resolve 
-			     types features link stylesheet);
+use vars '$VERSION';
+$VERSION = 0.75;
 
 sub new {
-  my $class = shift;
-  my ($server,$dsn) = rearrange([qw(server dsn)],@_);
-  return bless {
-		server => $server,
-		dsn    => $dsn,
-		debug  => 0,
-	       },$class;
+  my $package = shift;
+  my $timeout = shift;
+  my $auth_callback = shift;
+  my $self = bless {
+		'sockets'  => {},   # map socket to Bio::Das::HTTP::Fetch objects
+		'timeout'  => $timeout,
+	       },$package;
+  $self->auth_callback($auth_callback) if defined $auth_callback;
+  return $self;
 }
 
-# return base url for server (unchecked)
-sub server {
+sub auth_callback{
   my $self = shift;
-  my $d = $self->{server};
-  $self->{server} = shift if @_;
+  if(defined $_[0]){
+    croak "Authenication callback routine to set is not a reference to code" 
+      unless ref $_[0] eq "CODE";
+  }
+
+  my $d    = $self->{auth_callback};
+  $self->{auth_callback} = shift if @_;
   $d;
 }
 
-# return the last error
-sub error {
+sub proxy {
   my $self = shift;
-  my $d = $self->{error};
-  $self->{error} = shift if @_;
+  my $d    = $self->{proxy};
+  $self->{proxy} = shift if @_;
+  $d;
+}
+
+sub timeout {
+  my $self = shift;
+  my $d = $self->{timeout};
+  $self->{timeout} = shift if @_;
   $d;
 }
 
@@ -58,176 +64,213 @@ sub debug {
   $d;
 }
 
-# return symbolic data source (unchecked)
+# call with list of base names
+# will return a list of DSN objects
 sub dsn {
   my $self = shift;
-  my $d = $self->{dsn};
-  $self->{dsn} = shift if @_;
-  $d;
-}
-
-# return an LWP user agent
-sub agent {
-  my $self = shift;
-  return $self->{agent} ||= LWP::UserAgent->new;
-}
-
-# construct base url
-sub base {
-  my $self = shift;
-  my $b = $self->server;
-  $b .= '/' . $self->dsn if $self->dsn;
-  $b;
-}
-
-# construct a DAS request
-sub request_url {
-  my $self = shift;
-  my $type = lc shift or croak 'usage: request($type [,@param])';
-  croak "Invalid request type $type" unless $VALID_TYPE{lc $type};
-  my $url = URI::URL->new(join '/',$self->base,$type);
-  $url->query(shift) if @_;
-  return $url;
-}
-
-# get a request
-sub request {
-  my $self = shift;
-  my $type = shift or die "Usage: request(\$type)";
-  my $url = $self->request_url($type);
-
-  if (my $args = shift) { # flatten
-    my @args;
-    for my $p (keys %$args) {
-      if (ref($args->{$p})) {
-	push @args,map { $p=>$_ } @{$args->{$p}};
-      } else {
-	push @args,$p,$args->{$p};
-      }
-    }
-
-    return POST($url=>\@args);  # arguments will be POSTed
-
-    if (FORCE_GET) {
-      my @pairs;
-      while (@args) {
-	my $key   = shift @args;
-	my $value = shift @args;
-	next unless defined $value;
-	$value ||= '';
-	$key   ||= '';
-	push @pairs,"$key=$value";
-      }
-      my $query_string = join ';',@pairs;
-      $url->query($query_string);
-      return GET($url);
-    }
-  } else {
-    return GET($url);
-  }
-}
-
-# Issue a request, return XML.
-# Optionally, pass content to subroutine
-sub do_request {
-  my $self = shift;
-  my $type   = shift;              # the type of the request comes first
-  my ($parser,$chunk,$other) = rearrange([['parse','parser'],'chunk'],@_);
-
-  my $request = ref($other) ? $self->request($type,$other) : $self->request($type);
-  warn "Request:\n",$request->as_string,"\n" if $self->debug;
-
-  my $ua = $self->agent;
-
-  my $reply;
-  if ($parser && $parser->can('parsesub')) {
-    $chunk ||= 4096;
-    $reply = $ua->request($request,$parser->parsesub,$chunk);
-    $parser->parsedone;
-    $self->error($reply->message) if $reply->is_error;
-    my ($status_code) = $reply->header('x-das-status') =~ /(\d+)/;
-    return $self->error("An error occurred, das status code ".$reply->header('x-das-status')) 
-       unless $status_code == 200;
-    return $reply->is_success;
-  } else {
-    $reply = $ua->request($request);
-    $self->error($reply->message) if $reply->is_error;
-    return $reply->content;
-  }
-}
-
-sub _dna        { shift->do_request('dna',@_) }
-sub _features   { shift->do_request('features',@_) }
-sub _sources    { shift->do_request('dsn',@_) }
-sub _entry_points { shift->do_request('entry_points',@_) }
-sub _types      { shift->do_request('types',@_) }
-sub _link       { shift->do_request('link',@_) }
-sub _stylesheet { shift->do_request('stylesheet',@_) }
-
-# return a new Bio::Das::Segment object
-sub segment {
-  my $self = shift;
-  my ($sequence,$refseq,$start,$stop,$offset,$length);
-
-  # handle a few shortcut cases
-  if (@_ == 1) {
-    # 1) Bio::Das->new($das_segment)
-    if (ref($_[0]) && $_[0]->isa('Bio::RangeI')) {
-      $sequence  = shift;
-      $start     = $sequence->start;
-      $stop      = $sequence->stop;
-    } else {
-      $refseq    = shift;
-    }
-
-  } else {
-
-    ($sequence,$refseq,$start,$stop,$offset,$length) =
-      rearrange(  [
-		   ['seq','segment'],
-		   ['ref','refseq'],
-		   'start',
-		   ['stop','end'],
-		   'offset',
-		   'length',
-		  ],
-		@_);
-  }
-
-  # play games with offset and length
-  $start = $offset+1        if defined $offset;
-  $stop   = $start+$length-1 if defined $length;
-
-  # we're asked here to clone the segment, possibly using a
-  # different start and stop boundary
-  return $self->segment(-refseq=>$sequence->refseq,
-			-start => $start,
-			-stop  => $stop) if $sequence;
-
-  return Bio::Das::Segment->new($self,$refseq,$start,$stop);
+  my @requests = $_[0]=~/^-/ ? Bio::Das::Request::Dsn->new(@_)
+                             : map { Bio::Das::Request::Dsn->new($_) } @_;
+  $self->run_requests(\@requests);
 }
 
 sub entry_points {
   my $self = shift;
-  return Bio::Das::Segment->entry_points($self);
+  my ($dsn,$ref,$callback) =  rearrange([['dsn','dsns'],
+					 ['ref','refs'],
+					 'callback',
+					],@_);
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Entry_points->new(-dsn    => $dsn,
+						       -ref    => $ref,
+						       -callback => $callback);
+  }
+  $self->run_requests(\@request);
 }
 
-sub stylesheet {
-  my $self = shift;
-  return Bio::Das::Stylesheet->new($self);
-}
-
-sub sources {
-  my $self = shift;
-  return Bio::Das::Source->sources($self);
-}
-
+# call with list of DSN objects, and optionally list of segments and categories
 sub types {
   my $self = shift;
-  Bio::Das::Segment->new($self)->types;
+  my ($dsn,$segments,$categories,$enumerate,$callback) = rearrange([['dsn','dsns'],
+								    ['segment','segments'],
+								    ['category','categories'],
+								    'enumerate',
+								    'callback',
+								   ],@_);
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Types->new(-dsn        => $dsn,
+						-segment    => $segments,
+						-categories => $categories,
+						-enumerate   =>$enumerate,
+						-callback    => $callback,
+					       );
+  }
+  $self->run_requests(\@request);
 }
 
+# call with list of DSN objects, and a list of one or more segments
+sub dna {
+  my $self = shift;
+  my ($dsn,$segments,$callback) = rearrange([['dsn','dsns'],
+					     ['segment','segments'],
+					     'callback',
+					    ],@_);
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Dnas->new(-dsn        => $dsn,
+					       -segment    => $segments,
+					       -callback    => $callback);
+  }
+  $self->run_requests(\@request);
+}
+
+# call with list of DSNs, and optionally list of segments and categories
+sub features {
+  my $self = shift;
+  my ($dsn,$segments,$types,$categories,$callback) = rearrange([['dsn','dsns'],
+								['segment','segments'],
+								['type','types'],
+								['category','categories'],
+								'callback',
+							       ],@_);
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Features->new(-dsn        => $dsn,
+						   -segments   => $segments,
+						   -types      => $types,
+						   -categories => $categories,
+						   -callback   => $callback);
+  }
+  $self->run_requests(\@request);
+}
+
+sub add_pending {
+  my $self    = shift;
+  my $fetcher = shift;
+  $self->{sockets}{$fetcher->socket} = $fetcher;
+}
+
+sub remove_pending {
+  my $self    = shift;
+  my $fetcher = shift;
+  delete $self->{sockets}{$fetcher->socket};
+}
+
+sub run_requests {
+  my $self     = shift;
+  my $requests = shift;
+  my $auth_callback = $self->auth_callback;
+
+  for my $request (@$requests) {
+    my $fetcher = Bio::Das::HTTP::Fetch->new(-request => $request,
+					     -headers => {'Accept-encoding' => 'gzip'},
+					     -proxy   => $self->proxy || ''
+					    ) or next;
+    $fetcher->debug(1) if $self->debug;
+    $self->add_pending($fetcher);
+  }
+
+  my $timeout = $self->timeout;
+
+  # create two IO::Select objects to handle writing & reading  
+  my $readers = IO::Select->new;
+  my $writers = IO::Select->new;
+
+  for my $fetcher (values %{$self->{sockets}}) {
+    my $socket = $fetcher->socket;
+    $writers->add($socket);
+  }
+
+  my $timed_out;
+  while ($readers->count or $writers->count) {
+    my ($readable,$writable) = IO::Select->select($readers,$writers,undef,$timeout);
+
+    ++$timed_out && last unless $readable || $writable;
+
+    foreach (@$writable) {                      # handle is ready for writing
+      my $fetcher = $self->{sockets}{$_};       # recover the HTTP fetcher
+      my $result = $fetcher->send_request;      # try to send the request
+      $readers->add($_) if $result;             # send successful, so monitor for reading
+      $fetcher->request->error($fetcher->error) 
+	unless $result;                         # copy the error message
+      $writers->remove($_);                     # and remove from list monitored for writing
+    }
+
+    foreach (@$readable) {        # handle is ready for reading
+      my $fetcher = $self->{sockets}{$_};       # recover the HTTP object
+      my $result = $fetcher->read;              # read some data
+      if($fetcher->error =~ /^401\s/ && $self->auth_callback){ # Don't give up if given authentication challenge
+         $self->authenticate($fetcher);   # The result will automatically appear, as fetcher contains request reference
+      }
+      unless ($result) {                    # remove if some error occurred
+	$fetcher->request->error($fetcher->error) unless defined $result;
+	$readers->remove($_);
+	delete $self->{sockets}{$_};
+      }
+    }
+  }
+
+  # handle timeouts
+  if ($timed_out) {
+    while (my ($sock,$f) = each %{$self->{sockets}}) { # list of still-pending requests
+      $f->request->error('timeout');
+      $readers->remove($sock);
+      $writers->remove($sock);
+      close $sock;
+    }
+  }
+
+  delete $self->{sockets};
+  return wantarray ? @$requests : $requests->[0];
+}
+
+# The callback routine used below for authentication must accept three arguments: 
+#    the fetcher object, the realm for authentication, and the iteration
+# we are on.  A return of undef means that we should stop trying this connection (e.g. cancel button
+# pressed, or x number of iterations tried), otherwise a two element array (not a reference to an array)
+# should be returned with the username and password in that order.
+# I assume if you've called autheniticate, it's because you've gotten a 401 error. 
+# Otherwise this does not make sense.
+# There is also no caching of authentication done.  I suggest the callback do this, so
+# the user isn't asked 20 times for the same name and password.
+
+sub authenticate($$$){
+  my ($self, $fetcher) = @_;
+  my $callback = $self->auth_callback;
+
+  return undef unless defined $callback;
+
+  $self->{auth_iter} = {} if not defined $self->{auth_iter};
+
+  my ($realm) = $fetcher->error =~ /^\S+\s+'(.*)'/; 
+
+  return if $self->{auth_iter}->{$realm} < 0;  # Sign that we've given up, don't try again
+
+  my ($user, $pass) = &$callback ($fetcher, $realm, ++($self->{auth_iter}->{$realm}));
+
+  if(not defined $user){  #Give up, denote with negative iteration value
+    $self->{auth_iter}->{$realm} = -1;
+  }
+
+  # Reuse request (no need to manipulate result lists) with new authentication built into dsn
+  my $request = $fetcher->request;
+  $self->remove_pending($fetcher);
+  # How do we clean up the old fetcher,which is no longer needed?
+  $fetcher->request->dsn->set_authentication($user, $pass);
+  return $self->run_requests([$request]);
+}
 1;
+
+
 __END__
 
 =head1 NAME
@@ -238,37 +281,42 @@ Bio::Das - Interface to Distributed Annotation System
 
   use Bio::Das;
 
-  # contact a DAS server using the "elegans" data source
-  my $das      = Bio::Das->new('http://www.wormbase.org/db/das' => 'elegans');
+  # create a new DAS agent with a timeout of 5 sec
+  my $das = Bio::Das->new(5);
 
-  # fetch a segment
-  my $segment  = $das->segment(-ref=>'CHROMOSOME_I',-start=>10_000,-stop=>20_000);
+  # fetch features from wormbase server spanning two segments on chromosome I
+  my $response = $das->features(-dsn     => 'http://www.wormbase.org/db/das/elegans',
+				-segment => ['CHROMOSOME_I:1,10000',
+                                             'CHROMOSOME_I:10000,20000'
+                                            ]
+			       );
+  die $response->error unless $response->is_success;
+  my $results = $response->results;
+  for my $segment (keys %$results) {
+      my @features = @{$results->{$segment}};
+      print join ' ',$seg,@features,"\n";
+  }
 
-  # get features and DNA from segment
-  my @features = $segment->features;
-  my $dna      = $segment->dna;
-
-  # find out what data sources are available:
-  my $db       = Bio::Das->new('http://www.wormbase.org/db/das')
-  my @sources  $db->sources;
-
-  # select a source
-  $db->dsn($sources[1]);
-
-  # find out what feature types are available
-  my @types       = $db->types;
-
-  # get the stylesheet
-  my $stylesheet  = $db->stylesheet;
-
-  # get the entry points
-  my @entry_poitns = $db->entry_points;
+  # alternatively, invoke with a callback:
+  $das->features(-dsn     => 'http://www.wormbase.org/db/das/elegans',
+	  	 -segment => ['CHROMOSOME_I:1,10000',
+                              'CHROMOSOME_I:10000,20000'
+                             ],
+		 -callback => sub { my $feature = shift;
+                                    my $segment = $feature->segment;
+                                    my ($start,$end) = ($feature->start,$feature->end);
+                                    print "$segment => $feature ($start,$end)\n";
+                                  }
+			       );
 
 =head1 DESCRIPTION
 
 Bio::Das provides access to genome sequencing and annotation databases
-that export their data in Distributed Annotation System (DAS) format.
-This system is described at http://biodas.org.
+that export their data in Distributed Annotation System (DAS) format
+version 1.5.  This system is described at http://biodas.org.  Both
+unencrypted (http:) and SSL-encrypted (https:) DAS servers are
+supported.  (To run SSL, you will need IO::Socket::SSL and Net::SSLeay
+installed).
 
 The components of the Bio::Das class hierarchy are:
 
@@ -277,52 +325,39 @@ The components of the Bio::Das class hierarchy are:
 =item Bio::Das
 
 This class performs I/O with the DAS server, and is responsible for
-generating Bio::Das::Segment, Bio::Das::Stylesheet, and
-Bio::Das::Source objects.
+generating DAS requests.  At any time, multiple requests to different
+DAS servers can be running simultaneously.
+
+=item Bio::Das::Request
+
+This class encapsulates a request to a particular DAS server, as well
+as the response that is returned from it.  Methods allow you to return
+the status of the request, the error message if any, and the data
+results.
 
 =item Bio::Das::Segment
 
-This class encapsulates information about a named segment of the
-genome.  Segments are generated by Bio::Das, and in turn are
-responsible for generating Bio::Das::Segment::Feature objects.
-Bio::Das::Segment implements the Bio::RangeI interface.
+This encapsulates information about a segment on the genome, and
+contains information on its start, end and length.
 
-=item Bio::Das::Segment::Feature
+=item Bio::Das::Feature
 
-This is a subclass of Bio::Das::Segment, and provides information
-about an annotated genomic feature.  In addition to implementing
-Bio::RangeI, this class implements the Bio::SeqFeatureI interface.
+This provides information on a particular feature of a
+Bio::Das::Segment, such as its type, orientation and score.
 
-=item Bio::Das::Segment::GappedAlignment
+=item Bio::Das::Type
 
-This is a subclass of Bio::Das::Segment::Feature that adds a minimal
-set of methods appropriate for manipulating gapped alignments.
+This class contains information about a feature's type, and is a
+holder for an ontology term.
 
-=item Bio::Das::Segment::Transcript
+=item Bio::Das::DSN
 
-This is a subclass of Bio::Das::Segment::Feature that adds a minimal
-set of methods appropriate for manipulating mRNA transcript models.
+This class contains information about a DAS data source.
 
 =item Bio::Das::Stylesheet
 
-This is a class that translates Bio::Das::Segment::Feature objects
-into suggested glyph names and arguments.  It represents the remote
-DAS server's suggestions for how particular annotations should be
-represented visually.
-
-=item Bio::Das::Source
-
-This class contains descriptive information about a DAS data source
-(DSN).
-
-=item Bio::Das::Parser
-
-This is a base class used by the Bio::Das::* hierarchy that provides
-methods for parsing the XML used in DAS data transmission.
-
-=item Bio::Das::Util
-
-Internally-used utility functions.
+This class is unimplemented, but is intended to hold information
+about the DAS stylesheet.
 
 =back
 
@@ -332,172 +367,253 @@ The public Bio::Das constructor is new():
 
 =over 4
 
-=item $das = Bio::Das->new($server_url [,$dsn])
+=item $das = Bio::Das->new($timeout [,$authentication_callback])
 
-Create a new Bio::Das object, associated with the URL given in
-$server_url.  The server URL uses the format described in the
-specification at biodas.org, and consists of a site-specific prefix
-and the "/das" path name.  For example:
+Create a new Bio::Das object, with the indicated timeout and optional
+callback for authentication.  The timeout will be used to decide when
+a server is not responding and to return a "can't connect" error.  Its
+value is in seconds, and can be fractional (most systems will provide
+millisecond resolution).  The authentication callback will be invoked
+if the remote server challenges Bio::Das for authentication credentials.
 
- http://www.wormbase.org/db/das
- ^^^^^^^^^^^^^^^^^^^^^^^^^^
- site-specific prefix
-
-The optional $dsn argument specifies a data source, for use by DAS
-servers that provide access to several annotation sets.  A data source
-is a symbolic name, such as 'human_genes'.  A list of such sources can
-be obtained from the server by using the sources() method.  Once set,
-the data source can be examined or changed with the dsn() method.
+If successful, this method returns a Bio::Das object.
 
 =back
 
-=head2 OBJECT METHODS
+=head2 ACCESSOR METHODS
 
-Once created, the Bio::Das object provides the following methods:
+Once created, the Bio::Das object provides the following accessor methods:
 
 =over 4
 
-=item @sources = $das->sources
+=item $proxy = $das->proxy([$new_proxy])
 
-Return a list of data sources available from this server.  This is one
-of the few methods that can be called before setting the data source.
+Get or set the proxy to use for accessing indicated servers.  Only
+HTTP and HTTPS proxies are supported at the current time.
 
-=item $segment = $das->segment($id)
+=item $callback = $das->auth_callback([$new_callback])
 
-=item $segment = $das->segment(-ref => $reference [,@args]);
+Get or set the callback to use when authentication is required.  See
+the section "Authentication" for more details.
 
-The segment() method returns a new Bio::Das::Segment object, which can
-be queried for information related to a sequence segment.  There are
-two forms of this call.  In the single-argument form, you pass
-segment() an ID to be used as the reference sequence.  Sequence IDs
-are server-specific (some servers will accept genbank accession
-numbers, others more complex IDs such as Locus:unc-9).  The method
-will return a Bio::Das::Segment object containing a region of the
-genomic corresponding to the ID.
+=item $timeout = $das->timeout([$new_timeout])
 
-Instead of a segment ID, you may use a previously-created
-Bio::Das::Segment object, in which case a copy of the segment will be
-returned to you.  You can then adjust its start and end positions.
+Get or set the timeout for slow servers.
 
-In the multiple-argument form, you pass a series of argument/value
-pairs:
+=item $debug  = $das->debug([$debug_flag])
 
-  Argument   Value                   Default
-  --------   -----                   -------
+Get or set a flag that will turn on verbose debugging messages.
 
-  -ref       Reference ID            none
-  -segment   Bio::Das::Segment obj   none
-  -start     Starting position       1
-  -stop      Ending position         length of ref ID
-  -offset    Starting position       0
-             (0-based)
-  -length    Length of segment       length of ref ID
+=back
 
-The B<-ref> argument is required, and indicates the ID of the genomic
-segment to retrieve.  B<-segment> is optional, and can be used to use
-a previously-created Bio::Das::Segment object as the reference point
-instead.  If both arguments are passed, B<-segment> supersedes
-B<-ref>.
+=head2 DATA FETCHING METHODS
 
-B<-start> and B<-end> indicate the start and stop of the desired
-genomic segment, relative to the reference ID.  If not provided, they
-default to the start and stop of the reference segment.  These
-arguments use 1-based indexing, so a B<-start> of 0 positions the
-segment one base before the start of the reference.
+The following methods accept a series of arguments, contact the
+indicated DAS servers, and return a series of response objects from
+which you can learn the status of the request and fetch the results.
 
-B<-offset> and B<-length> arguments are alternative ways to indicate a
-segment using zero-based indexing.  It is probably not a good to mix
-the two calling styles, but if you do, be aware that B<-offset>
-supersedes B<-start> and B<-length> supersedes B<-stop>.
+=item @response = $das->dsn(@list_of_urls)
 
-Note that no checking of the validity of the passed reference ID will
-be performed until you call the segment's features() or dna() methods.
+The dsn() method accepts a list of DAS server URLs and returns a list
+of the DSNs provided by each server.
 
-=item @entry_points = $das->entry_points
+The request objects will indicate whether each request was successful
+via their is_success() methods.  For your convenience, the request
+object is automagically stringified into the requested URL.  For example:
 
-The entry_points() method returns an array of Bio::Das::Segment
-objects that have been designated "entry points" by the DAS server.
-Also see the Bio::Das::Segment->entry_points() method.
+ my $das = Bio::Das->new(5);  # timeout of 5 sec
+ my @response = $das->dsn('http://stein.cshl.org/perl/das',
+  			 'http://genome.cse.ucsc.edu/cgi-bin/das',
+			 'http://user:pass@www.wormbase.org/db/das',
+			 'https://euclid.well.ox.ac.uk/cgi-bin/das',
+			);
 
-=item $stylesheet = $das->stylesheet
+ for my $url (@response) {
+   if ($url->is_success) {
+     my @dsns = $url->results;
+     print "$url:\t\n";
+     foreach (@dsns) {
+       print "\t",$_->url,"\t",$_->description,"\n";
+     }
+   } else {
+     print "$url: ",$url->error,"\n";
+   }
+ }
 
-Return the stylesheet from the remote DAS server.  The stylesheet
-contains suggestions for the visual format for the various features
-provided by the server and can be used to translate features into
-glyphs.  The object returned is a Bio::Das::Stylesheet object.
+Each element in @dsns is a L<Bio::Das::DSN> object that can be used
+subsequently in calls to features(), types(), etc.  For example, when
+this manual page was written, the following was the output of this
+script.
 
-=item @types = $das->types
+ http://stein.cshl.org/perl/das/dsn:	
+	http://stein.cshl.org/perl/das/chr22_transcripts	This is the EST-predicted transcripts on...
+ http://genome.cse.ucsc.edu/cgi-bin/das/dsn:	
+	http://genome.cse.ucsc.edu/cgi-bin/das/hg8	Human Aug. 2001 Human Genome at UCSC
+	http://genome.cse.ucsc.edu/cgi-bin/das/hg10	Human Dec. 2001 Human Genome at UCSC
+	http://genome.cse.ucsc.edu/cgi-bin/das/mm1	Mouse Nov. 2001 Human Genome at UCSC
+	http://genome.cse.ucsc.edu/cgi-bin/das/mm2	Mouse Feb. 2002 Human Genome at UCSC
+	http://genome.cse.ucsc.edu/cgi-bin/das/hg11	Human April 2002 Human Genome at UCSC
+	http://genome.cse.ucsc.edu/cgi-bin/das/hg12	Human June 2002 Human Genome at UCSC
+ http://user:pass@www.wormbase.org/db/das/dsn:	
+	http://user:pass@www.wormbase.org/db/das/elegans     This is the The C. elegans genome at CSHL
+ https://euclid.well.ox.ac.uk/cgi-bin/das/dsn:	
+	https://euclid.well.ox.ac.uk/cgi-bin/das/dicty	        Test annotations
+	https://euclid.well.ox.ac.uk/cgi-bin/das/elegans	C. elegans annotations on chromosome I & II
+	https://euclid.well.ox.ac.uk/cgi-bin/das/ensembl	ensembl test annotations
+	https://euclid.well.ox.ac.uk/cgi-bin/das/test	        Test annotations
+	https://euclid.well.ox.ac.uk/cgi-bin/das/transcripts	transcripts test annotations
 
-This method returns a list of all the annotation feature types served
-by the DAS server.  The return value is an array of Bio::Das::Type
+Notice that the DSN URLs always have the format:
+
+ http://www.wormbase.org/db/das/$DSN
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In which the ^^^ indicated part is identical to the server address.
+
+=item @response = $das->types(-dsn=>[$dsn1,$dsn2],@other_args)
+
+The types() method asks the indicated servers to return the feature
+types that they provide.  Arguments are name-value pairs:
+
+  Argument      Description
+  --------      -----------
+
+  -dsn          A DAS DSN, as returned by the dsn() call.  You may
+                also provide a simple string containing the DSN URL.
+                To make the types() request on multiple servers, pass an
+                array reference containing the list of DSNs.
+
+  -segment      (optional) An array ref of segment objects.  If provided, the
+                list of types will be restricted to the indicated segments.
+
+  -category     (optional) An array ref of type categories.  If provided,
+                the list of types will be restricted to the indicated
+                categories.
+
+  -enumerate    (optional) If true, the server will return the count of
+                each time.
+
+  -callback     (optional) Specifies a subroutine to be invoked on each
+                type object received.
+
+Segments have the format: "seq_id:start,end".  If successful, the
+response results() method will return a list of Bio::Das::Type
 objects.
 
+If a callback is specified, the code ref will be invoked with two
+arguments.  The first argument is the Bio::Das::Segment object, and
+the second is an array ref containing the list of types present in
+that segment.  If no -segment argument was provided, then the callback
+will be invoked once with a dummy segment (a version, but no seq_id,
+start or end), and an arrayref containing the types.  If a callback is
+specified, then the @response array will return the status codes for
+each request, but invoking results() will return empty.
+
+=item @response = $das->entry_points(-dsn=>[$dsn1,$dsn2],@other_args)
+
+Invoke an entry_points request.  Arguments are name-value pairs:
+
+  Argument      Description
+  --------      -----------
+
+  -dsn          A DAS DSN, as returned by the dsn() call.  You may
+                also provide a simple string containing the DSN URL.
+                To make the types() request on multiple servers, pass an
+                array reference containing the list of DSNs.
+
+  -callback     (optional) Specifies a subroutine to be invoked on each
+                segment object received.
+
+If a callback is specified, then the @response array will contain the
+status codes for each request, but the results() method will return
+empty.
+
+Successful responses will return a set of Bio::Das::Segment objects.
+
+=item @response = $das->features(-dsn=>[$dsn1,$dsn2],@other_args)
+
+Invoke a features request to return a set of Bio::Das::Feature
+objects.  The -dsn argument is required, and may point to a single DSN
+or to an array ref of several DSNs.  Other arguments are optional:
+
+  Argument      Description
+  --------      -----------
+
+  -dsn          A DAS DSN, as returned by the dsn() call.  You may
+                also provide a simple string containing the DSN URL.
+                To make the types() request on multiple servers, pass an
+                array reference containing the list of DSNs.
+
+  -segment      A single segment, or an array ref containing
+                several segments.  Segments are either Bio::Das::Segment
+                objects, or strings of the form "seq_id:start,end".
+
+  -type         (optional) A single feature type, or an array ref containing
+                several feature types.  Types are either Bio::Das::Type
+                objects, or plain strings.
+
+  -category     (optional) A single feature type category, or an array ref
+                containing several categories.  Category names are described
+                in the DAS specification.
+
+  -feature_id   (optional) One or more feature IDs.  The server will return
+                the list of segment(s) that contain these IDs.  You will
+                need to check with the data provider for the proper format
+                of the IDs, but the style "class:ID" is common.  This will
+                be replaced in the near future by LSID-style IDs.  Also note
+                that only servers compliant with the 1.52 version of the
+                spec will honor this.
+
+  -group_id     (optional) One or more group IDs.  The server will return
+                the list of segment(s) that contain these IDs.  You will
+                need to check with the data provider for the proper format
+                of the IDs, but the style "class:ID" is common.  This will
+                be replaced in the near future by LSID-style IDs.  Also note
+                that only servers compliant with the 1.52 version of the
+                spec will honor this.
+
+  -callback     (optional) Specifies a subroutine to be invoked on each
+                Bio::Das::Feature object received.
+
+If a callback is specified, then the @response array will contain the
+status codes for each request, but results() will return empty.
+
+Note, if the -segment argument is not provided, some servers will
+provide all the features in the database.
+
+=item @response = $das->dna(-dsn=>[$dsn1,$dsn2],@other_args)
+
+Invoke a features request to return a DNA string.  The -dsn argument
+is required, and may point to a single DSN or to an array ref of
+several DSNs.  Other arguments are optional:
+
+  Argument      Description
+  --------      -----------
+
+  -dsn          A DAS DSN, as returned by the dsn() call.  You may
+                also provide a simple string containing the DSN URL.
+                To make the types() request on multiple servers, pass an
+                array reference containing the list of DSNs.
+
+  -segment      (optional) A single segment, or an array ref containing
+                several segments.  Segments are either Bio::Das::Segment
+                objects, or strings of the form "seq_id:start,end".
+
+  -callback     (optional) Specifies a subroutine to be invoked on each
+                DNA string received.
+
+-dsn, -segment and -callback have the same meaning that they do in
+similar methods.
+
 =back
 
-=head2 ACCESSORS
+=head2 Fetching results
 
-A number of less-frequently used methods are accessors for the
-Bio::Das object, and can be used to examine and change its settings.
-Called with no arguments, the accessors return the current value of
-the setting.  Called with a single argument, the accessors change the
-setting and return its previous value.
+- documentation pending -
 
-  Accessor         Description
-  --------         -----------
-  server()         Get/set the URL of the server
-  error()          Get/set the last error message
-  dsn()            Get/set the DSN of the data source
-  source()         An alias for dsn()
+=head2 Authentication
 
-=head2 INTERNAL METHODS
-
-The methods in this section are published methods that are used
-internally.  They may be useful for subclassing.
-
-=over 4
-
-=item $agent = $das->agent
-
-Return the LWP::UserAgent that will be used for communicating with the
-DAS server.
-
-=item $url = $das->base
-
-Return a URL resulting from combining the server URL with the DSN.
-
-=item $request = $das->request($query_type [,@args])
-
-Create a LWP::Request object for use in communicating with the DAS
-server.  The B<$query_type> argument is the type of the request, and may be
-one of "dsn", "entry_points", "dna", "resolve", "types", "features",
-"link", and "stylesheet".The optional B<@args> array contains a series
-of name/value pairs to pass to the DAS server.
-
-=item $url = $das->request_url($query_type)
-
-Creates a URI::URL object corresponding to the indicated query type.
-
-=item $data = $das->do_request($query_type [,@args][,-parser=>$parser] [,-chunk=>$chunksize]
-
-This method invokes the DAS query indicated by B<$query_type> using
-the arguments indicated by B<@args>, and returns the resulting XML
-document.  For example, to get the raw XML output from a DAS server
-using the dna request on the M7 clone segment from 1 to 30,000, you
-could call do_request() like this:
-
- $dna_xml = $das->do_request('dna',-ref=>'M7',-start=>1,-stop=>30000);
-
-Query arguments correspond to the CGI parameters listed for each
-request in the DAS specification, with the exception that they are
-preceded by a hyphen.
-
-You may provide a B<-parser> argument, in which case the downloaded
-XML is passed to the indicated parser for interpretation.  The
-B<-chunk> argument controls the size of the chunks passed to the
-parser.  Parsers must be objects the implement the interface described
-in L<Bio::Das::Parser>.
-
-=back
+- documentation pending -
 
 =head1 AUTHOR
 

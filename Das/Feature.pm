@@ -1,4 +1,4 @@
-package Bio::Das::Segment::Feature;
+package Bio::Das::Feature;
 
 use strict;
 use vars qw($VERSION @ISA);
@@ -6,7 +6,6 @@ use overload '""' => 'toString',
              cmp  => '_cmp';
 
 use Bio::Das::Util;  # for rearrange
-@ISA = qw(Bio::Das::Segment);
 
 # we follow the SeqFeatureI interface but don't actually need
 # to load it.
@@ -17,17 +16,16 @@ $VERSION = '0.01';
 *subtype  = \&method;
 *segments = \&sub_seqFeature;
 *info     = \&label;
+*end      = \&stop;
 
 sub new {
   my $class = shift;
-  if (@_ == 1 && $_[0]->isa('Bio::Das::Segment::Feature')) {
-    my %s = %{$_[0]};  # copy
-    return bless \%s,$class;
-  }
-  my ($segment,$id,$label) = rearrange([qw(segment id label)],@_);
+  my ($segment,$id,$start,$stop) = rearrange([qw(segment id start stop)],@_);
   return bless { segment => $segment,
 		 id     => $id,
-		 label  => $label },$class;
+		 start  => $start,
+		 stop   => $stop
+	       },$class;
 }
 
 sub segment {
@@ -37,7 +35,20 @@ sub segment {
   $d;
 }
 
-sub source { shift->segment->source }
+sub start {
+  my $self = shift;
+  my $d    = $self->{start};
+  $self->{start} = shift if @_;
+  $d;
+}
+
+sub stop {
+  my $self = shift;
+  my $d    = $self->{stop};
+  $self->{stop} = shift if @_;
+  $d;
+}
+
 sub refseq { shift->segment->refseq }
 
 sub id {
@@ -51,7 +62,7 @@ sub label {
   my $self = shift;
   my $d = $self->{label};
   $self->{label} = shift if @_;
-  $d || $self->id;
+  $d;
 }
 
 sub note {
@@ -156,7 +167,7 @@ sub end { shift->stop(@_) }
 
 sub toString {
   my $self = shift;
-  return $self->label || $self->SUPER::toString;
+  return $self->label || $self->id || ref($self);
 }
 
 # for aceperl compatibility
@@ -171,9 +182,6 @@ sub strand {
 sub reversed {
   return shift->strand eq '-';
 }
-
-#biographics alias
-sub sub_SeqFeature { return shift->sub_seqFeature(@_) }
 
 sub sub_seqFeature {
   my $self = shift;
