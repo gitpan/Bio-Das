@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.35 2004/04/03 20:04:23 lstein Exp $
+# $Id: Das.pm,v 1.36 2004/06/21 03:11:37 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -24,7 +24,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = 0.98;
+$VERSION = 0.99;
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -392,14 +392,15 @@ sub features {
   my @request;
   for my $dsn (@dsn) {
     push @request,Bio::Das::Request::Features->new(
-                           -dsn              => $dsn,
-						-segments         => $segments,
-						-types            => \@types,
-						-categories       => $categories,
-						-feature_callback => $fcallback  || undef,
-						-segment_callback => $scallback  || undef,
-                           -feature_id       => $feature_id || undef,
-                           -group_id         => $group_id   || undef,
+						   -dsn              => $dsn,
+						   -segments         => $segments,
+						   -types            => \@types,
+						   -categories       => $categories,
+						   -feature_callback => $fcallback  || undef,
+						   -segment_callback => $scallback  || undef,
+						   -das              => $self,
+						   -feature_id       => $feature_id || undef,
+						   -group_id         => $group_id   || undef,
                            );
   }
   my @results = $self->run_requests(\@request);

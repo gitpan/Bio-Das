@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.12 2004/04/23 21:11:54 lstein Exp $
+# $Id: Segment.pm,v 1.13 2004/06/21 03:11:37 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -58,7 +58,8 @@ sub features {
   }
   return $das->features(@args,
 			-dsn => $dsn,
-			-segment=> [$self->asString]);
+#			-segment=> [$self->asString]);
+			-segment=> [$self]);
 }
 
 sub autotypes {

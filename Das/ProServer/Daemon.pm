@@ -56,7 +56,7 @@ sub handle {
   my $HOSTNAME = &hostname();
   my $PIDFILE  = $config->pidfile()?($config->pidfile()):"$0.$HOSTNAME.pid";
   my $DEBUG    = 1;
-  
+
   $self->log("Proserver v$VERSION startup...");
   $self->log("Listening on host:port $host:$port");
   # establish SERVER socket, bind and listen.
@@ -65,27 +65,27 @@ sub handle {
 				   LocalAddr => $host,
 				   LocalPort => $port,
 				   ) or die "Cannot start daemon: $!\n";
-  
+
   $self->socket_server($server);
   my $url = $server->url();
-  
+
   # Fork off  children.
   for (1 .. $prefork) {
     $self->make_new_child();
   }
   $self->log("Started $prefork child servers");
-  
+
   my $pid = $self->make_pid_file($PIDFILE);
   $self->log("Wrote parent PID to $PIDFILE [PID: $pid]");
   $self->log("Please contact this server at this URL: $url");
-  
+
   # Install signal handlers.
   $SIG{CHLD}  = \&REAPER;
   $SIG{INT}   = \&HUNTSMAN;
   $SIG{TERM}  = \&HUNTSMAN;
   $SIG{USR1}  = \&RESTART;
   $SIG{HUP}   = \&RESTART;
-  
+
   # And maintain the population.
   while (1) {
     sleep;                          # wait for a signal (i.e., child's death)
@@ -104,8 +104,8 @@ sub RESTART {
 
   my @detaintargs = ();
   for my $a (@ARGV) {
-      my ($d) = $a =~ /([a-zA-Z0-9\/\._\-]+)/;
-      push @detaintargs, $d;
+    my ($d) = $a =~ /([a-zA-Z0-9\/\._\-]+)/;
+    push @detaintargs, $d;
   }
 
   print STDERR qq(Restarting $exe @detaintargs\n);
@@ -121,13 +121,13 @@ sub make_new_child {
   my $pid;
   my $sigset  = POSIX::SigSet->new(&POSIX::SIGINT);
   $sigset->addset(&POSIX::SIGHUP);
-  
+
   my $sigset2 = POSIX::SigSet->new(&POSIX::SIGHUP);
-  
+
   # block 'INT' signal during fork
   sigprocmask(SIG_BLOCK, $sigset) or die "Can't block SIGINT for fork: $!\n";
   die "fork: $!" unless defined ($pid = fork);
-  
+
   if ($pid) {
     ###########################################################################################
     # Parent process code executes from here
@@ -138,17 +138,28 @@ sub make_new_child {
     $CHILDREN++;
     $self->log("Child born: $pid (Total children: $CHILDREN)\n") if $DEBUG;
     return;
+
   } else {
     ###########################################################################################
     # Child process code executes from here
     ###########################################################################################
-    
+
+    my $cleandetach = 0;
+
     $SIG{INT}  = 'DEFAULT';
     $SIG{HUP}  = sub { $self->log("Received SIGHUP, child $$ resigning\n"); exit; };
+    $SIG{TERM} = sub { $cleandetach = 1; };
+
     sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock SIGINT for fork: $!\n";
-    
+
     for (my $i=0; $i < $config->maxclients(); $i++) {
+      if($cleandetach) {
+	$self->log("Received SIGTERM. Clean child $$ exit");
+	exit;
+      }
+
       my $c   = $server->accept();
+      next unless($c);
       my $req = $c->get_request();
 
       unless($req) {
@@ -159,38 +170,38 @@ sub make_new_child {
 
       my $url = $req->uri();
       my $cgi;
-      
+
       #########
       # process the parameters
       #
       if ($req->method() eq 'GET') {
 	$cgi = CGI->new($url->query());
-	
+
       } elsif ($req->method() eq 'POST') {
 	$cgi = CGI->new($req->{'_content'});
       }
-      
+
       $self->use_gzip(-1); # the default
-      
+
       my $path   = $url->path();
       $self->log("Request: $path");
       $path      =~ /das\/(.*?)\/(.*)/;
       my $dsn    = $1 || "";
       my $method = $2 || "";
       $method    =~ s/^(.*?)\//$1/;
-      
+
       if ($req->header('Accept-Encoding') && ($req->header('Accept-Encoding') =~ /gzip/) ) {
 	$self->use_gzip(1);
 	$self->log("  compressing content [client understands gzip content]");
       }
-      
+
       #########
       # recognised request type
       #
       if ($req->method() eq 'GET' || $req->method() eq 'POST') {
 	my $res     = HTTP::Response->new();
 	my $content = "";
-	
+
 	#########
 	# unrecognised DSN
 	#
@@ -200,12 +211,12 @@ sub make_new_child {
 	  $self->log("401 [Bad data source]");
 	  next;
 	}
-	
+
 	if  ($path eq "/das/dsn") {
 	  $content .= $self->do_dsn_request($res);
-	  
+
 	} elsif ($config->adaptor($dsn)->implements($method)) {
-	  
+
 	  if($method eq "features") {
 	    $content .= $self->do_feature_request($res, $dsn, $cgi);
 	  } elsif ($method eq "stylesheet") {
@@ -217,34 +228,38 @@ sub make_new_child {
 	  } elsif($method eq "types") {
 	    $content .= $self->do_types_request($res, $dsn, $cgi);
 	  }
-	  
+
 	} else {
 	  $c->send_error("501", "Unimplemented feature");
 	  $c->close();
 	  $self->log("501 [Unimplemented feature]");
 	  next;
 	}
-	
+
 	if( ($self->use_gzip() == 1) && (length($content) > 10000) ) {
 	  $content = $self->gzip_content($content);
 	  $res->content_encoding('gzip') if $content;
 	  $self->use_gzip(0)
 	}
-	
+
 	$res->content_length(length($content));
 	$res->content($content);
 	$c->send_response($res);
-	
+
 	#########
 	# unrecognised request type
 	#
       } else {
 	$c->send_error(RC_FORBIDDEN);
       }
-      
+
       $c->close();
+      if($cleandetach) {
+	$self->log("Received SIGTERM. Clean child $$ shutdown");
+	exit;
+      }
     }
-    
+
     print STDERR  "Child $$: reached max client count - exiting.\n";
     exit; ## very, very important exit!
   }
@@ -255,14 +270,14 @@ sub make_new_child {
 #
 sub do_entry_points_request {
   my ($self, $res, $dsn, $cgi) = @_;
-  
+
   my $adaptor = $self->adaptor($dsn);
   my $content = $adaptor->open_dasep();
   $content   .= $adaptor->das_entry_points();
   $content   .= $adaptor->close_dasep();
 
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -271,7 +286,7 @@ sub do_entry_points_request {
 #
 sub do_types_request {
   my ($self, $res, $dsn, $cgi) = @_;
-  
+
   my $adaptor = $self->adaptor($dsn);
   my $content = $adaptor->open_dastypes();
   my @segs    = $cgi->param('segment');
@@ -279,7 +294,7 @@ sub do_types_request {
   $content   .= $adaptor->close_dastypes();
 
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -288,7 +303,7 @@ sub do_types_request {
 #
 sub do_feature_request {
   my ($self, $res, $dsn, $cgi) = @_;
-  
+
   my $adaptor  = $self->adaptor($dsn);
   my $content  = $adaptor->open_dasgff();
   my @segs     = $cgi->param('segment');
@@ -305,7 +320,7 @@ sub do_feature_request {
   $content .= $adaptor->close_dasgff();
 
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -314,7 +329,7 @@ sub do_feature_request {
 #
 sub do_dna_request {
   my ($self, $res, $dsn, $cgi) = @_;
-  
+
   my $adaptor = $self->adaptor($dsn);
   my $content = $adaptor->open_dassequence();
   my @segs    = $cgi->param('segment');
@@ -327,7 +342,7 @@ sub do_dna_request {
   $content .= $adaptor->close_dassequence();
 
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -336,11 +351,11 @@ sub do_dna_request {
 #
 sub do_dsn_request {
   my ($self, $res) = @_;
-  
+
   my $adaptor = $self->adaptor();
   my $content = $adaptor->das_dsn();
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -349,11 +364,11 @@ sub do_dsn_request {
 #
 sub do_stylesheet_request {
   my ($self, $res, $dsn) = @_;
-  
+
   my $adaptor = $self->adaptor($dsn);
   my $content = $adaptor->das_stylesheet();
   $self->header($res, $adaptor);
-  
+
   return $content;
 }
 
@@ -458,9 +473,7 @@ sub REAPER {                        	# takes care of dead children
 
 ###########################################################
 sub HUNTSMAN {                      	# signal handler for SIGINT
-  local($SIG{CHLD}) = 'IGNORE';   	# we're going to kill our children
-  print STDERR "Killing children...\n";
-  kill 'INT' => keys %CHILDREN;
+  &PURGE_CHILDREN();
   exit;                           	# clean up with dignity
 }
 
@@ -468,7 +481,7 @@ sub HUNTSMAN {                      	# signal handler for SIGINT
 sub PURGE_CHILDREN {                      	# signal handler for SIGINT
   local($SIG{CHLD}) = 'IGNORE';   	# we're going to kill our children
   print STDERR "Killing children...\n";
-  kill 'INT' => keys %CHILDREN;
+  kill 'TERM' => keys %CHILDREN;
 }
 
 ###########################################################

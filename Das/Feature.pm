@@ -11,15 +11,16 @@ use Bio::Das::Util;  # for rearrange
 # we follow the SeqFeatureI interface but don't actually need
 # to load it.
 use Bio::SeqFeatureI;
-@ISA = qw(Bio::Root::Root Bio::SeqFeatureI);
-$VERSION = '0.01';
+@ISA = qw(Bio::Root::Root Bio::SeqFeatureI Bio::PrimarySeqI);
+$VERSION = '0.90';
 
 # aliases for Ace::Sequence::Feature compatibility
 *subtype   = \&method;
 *segments  = *sub_seqFeature = \&get_SeqFeatures;
-*info      = *display_name   = \&label;
+*display_id= *info      = *display_name   = \&label;
 *seq_id    = \&refseq;
 *make_link = \&link;
+*desc      = \&description;
 
 sub new {
   my $class = shift;
@@ -242,6 +243,19 @@ sub strand {
 
 sub reversed {
   return shift->strand eq '-';
+}
+
+sub seq {
+  my $self = shift;
+  my $seg    = $self->segment or return;
+  my $das    = $seg->das or return;
+  my $newseg = $das->segment($self->seq_id,$self->start,$self->end);
+  my $dna = $newseg->dna;
+  if ($self->strand < 0) {
+    $dna =~ tr/gatcGATC/ctagCTAG/;
+    $dna = reverse $dna;
+  }
+  $dna;
 }
 
 =head2 get_SeqFeatures
