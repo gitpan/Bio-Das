@@ -1,0 +1,20 @@
+2003-12-29  Lincoln Stein <lstein@cshl.edu>
+
+	* Numerous small compatibility changes to work as a remote annotation
+	source for gbrowse. Stylesheets should be working
+	properly now.
+	
+2003-05-24  Tony Cox  <avc@sanger.ac.uk>
+
+        * Checked in modules to run a small DAS reference server from an AGP file
+
+2003-05-22  Tony Cox  <avc@sanger.ac.uk>
+
+        * Fixes feature requests so that they can use feature_id/group_id
+        * Additions to feature XML parser. Just about all tags/attributes are now available.
+
+2002-11-13  Lincoln Stein  <lstein@cshl.org>
+
+	* HTTP request now sends Host: header, allowing virtual hosts to
+	function properly
+

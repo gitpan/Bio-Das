@@ -1,0 +1,92 @@
+#!/usr/local/bin/perl -wT
+#########
+# ProServer DAS Server
+# Author: rmp
+# Maintainer: rmp
+# Created: 2003-05-22
+# Last Modified: 2003-06-12
+#
+use lib qw(./blib/lib ../blib/lib);
+package proserver;
+
+=head1 AUTHOR
+
+Roger Pettett <rmp@sanger.ac.uk>.
+
+Based on AGPServer by
+
+Tony Cox <avc@sanger.ac.uk>.
+
+Copyright (c) 2003 The Sanger Institute
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=cut
+
+use strict;
+use Bio::Das::ProServer::Daemon;
+use Bio::Das::ProServer::Config;
+use Bio::Das::ProServer::Loader::agp;
+use Getopt::Long;
+
+$ENV{'PATH'} = "/bin";
+my %opts   = ();
+my $result = GetOptions(
+			'dsn:s'        => \$opts{'dsn'},
+			'dsnversion:i' => \$opts{'dsnversion'},
+			'agpfile:s'    => \$opts{'agpfile'},
+			'agpdir:s'     => \$opts{'agpdir'},
+			'tmpdir:s'     => \$opts{'tmpdir'},
+			'p|port:i'     => \$opts{'port'},
+			'h|hostname:s' => \$opts{'hostname'},
+			'dbhost:s'     => \$opts{'dbhost'},
+			'dbname:s'     => \$opts{'dbname'},
+			'username:s'   => \$opts{'username'},
+			'password:s'   => \$opts{'password'},
+			'dbport:i'     => \$opts{'dbport'},
+			'help|?'       => \$opts{'usage'},
+		       );
+
+my $config = Bio::Das::ProServer::Config->new();
+
+$config->{'port'}     = $opts{'port'}     if(defined $opts{'port'});
+$config->{'hostname'} = $opts{'hostname'} if(defined $opts{'hostname'});
+
+if(defined $opts{'dsn'}) {
+  die("You must specify a dsn name when using '--dsn'")     if($opts{'dsn'} eq "");
+  die("You must provide a username using '--username'")     unless $opts{'username'};
+
+  unless ($opts{'agpfile'} || $opts{'agpdir'}) {
+    die("You must provide an AGP filename or directory containing an AGP file\nusing '--agpfile' or '--agpdir'");
+  }
+
+  my $settings = {
+		  'adaptor'   => 'agp',
+		  'state'     => 'on',
+		  'transport' => 'dbi',
+		  'host'      => $opts{'dbhost'}   || "localhost",
+		  'port'      => $opts{'dbport'}   || "3306",
+		  'username'  => $opts{'username'},
+		  'password'  => $opts{'password'} || "",
+		  'dbname'    => $opts{'dbname'}   || 'agptest',
+		  'tablename' => "tmp_agp_$opts{'dsn'}",
+		  'tmpdir'    => $opts{'tmpdir'}   || "/tmp",
+		  'agpfile'   => $opts{'agpfile'},
+		  'agpdir'    => $opts{'agpdir'},
+		 };
+
+  print STDERR qq(Loading AGP data into $settings->{'host'}:$settings->{'port'}/$settings->{'dbname'}.$settings->{'tablename'}\n);
+
+  my $loader = Bio::Das::ProServer::Loader::agp->new($settings);
+
+  #########
+  # entirely override our configured adaptors (only serves 1 dsn)
+  #
+  $config->{'adaptors'} = {$opts{'dsn'} => $settings};
+}
+
+Bio::Das::ProServer::Daemon->new($config)->handle();
+
+1;
