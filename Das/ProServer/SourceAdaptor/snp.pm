@@ -22,27 +22,21 @@ it under the same terms as Perl itself.  See DISCLAIMER.txt for
 disclaimers of warranty.
 
 =cut
+
+my $root;
+
 BEGIN {
-  my $root = $ENV{'ENS_ROOT'};
+  $root = $ENV{'ENS_ROOT'};
   if(!defined $ENV{'ENSEMBL_SPECIES'} || $ENV{'ENSEMBL_SPECIES'} eq ""){
     print STDERR qq(No species defined... default to Homo_sapiens\n);
     $ENV{'ENSEMBL_SPECIES'} = "Homo_sapiens" ;
   }
   print STDERR qq(species = $ENV{'ENSEMBL_SPECIES'}\n);
   unshift(@INC,"$root/modules");
-  unshift(@INC,"$root/ensembl/modules");
-  unshift(@INC,"$root/ensembl-draw/modules");
-  unshift(@INC,"$root/ensembl-map/modules");
-  unshift(@INC,"$root/ensembl-compara/modules");
-  unshift(@INC,"$root/ensembl-external/modules");
-  unshift(@INC,"$root/conf");
-  unshift(@INC,"$root/perl");
-  unshift(@INC,"$root/bioperl-live");
 }
 
 use strict;
-use EnsWeb;
-use EnsEMBL::DB::Core;
+use IndexSupport;
 use base qw(Bio::Das::ProServer::SourceAdaptor);
 
 
@@ -69,32 +63,18 @@ sub init{
 
 sub length{
   my ($self,$seg) = @_;
-  if ($seg !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
-    if ($seg !~/^\w+\.\w+\.\w+\.\w+$/i){
-      #get contig coordinates
-      if (!$self->{'_length'}->{$seg}){
-	my $databases = &EnsEMBL::DB::Core::get_databases('core');
-	my $ca = $databases->{'core'}->get_CloneAdaptor();
-	my $clone = $ca->fetch_by_name($seg);
-	my $contigs = $clone->get_all_Contigs();
-	if(@$contigs == 1){
-	  $self->{'_length'}->{$seg} = $contigs->[0]->length();
-	}
-      }
-      return $self->{'_length'}->{$seg};
-    }
-    return;
-  }
-  #get chromosome coordinates
-  if (!$self->{'_length'}->{$seg}){
-    my $databases = &EnsEMBL::DB::Core::get_databases('core');
-    my $ca = $databases->{'core'}->get_ChromosomeAdaptor();
-    my $chromosome = $ca->fetch_by_chr_name($seg);
-    $self->{'_length'}->{$seg} = $chromosome->length();
-  }
-  return $self->{'_length'}->{$seg};
-}
+   if ($seg =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i && !$self->{'_length'}->{$seg}){
+  
+     my $conf = IndexSupport->new("$root/conf",'','Homo_sapiens');
+     my($length) = $conf->{'dbh'}->selectrow_array(qq(
+                       SELECT length FROM seq_region where name = ?
+                       ), {}, $seg );
 
+
+    $self->{'_length'}->{$seg} = $length;
+   }
+ return $self->{'_length'}->{$seg};
+}
 
 sub das_stylesheet{
   my ($self) = @_;
@@ -151,7 +131,9 @@ sub build_features{
   my $segid       = $opts->{'segment'};
   my $start       = $opts->{'start'};
   my $end         = $opts->{'end'};
-  my $restriction = "";
+  my $assm_name = $self->config->{'assm_name'};
+  my $assm_ver  = $self->config->{'assm_ver'};
+  #my $restriction = "";
   my $query       = "";
   my @features    = ();
 
@@ -159,32 +141,55 @@ sub build_features{
     return @features;
   }
 
-  if (defined $start && defined $end){
-    $restriction = qq(AND     ms.POSITION
-                      BETWEEN	($start - ssm.START_COORDINATE - 99)
-	              AND	($end - ssm.START_COORDINATE + 1));
+#  if (defined $start && defined $end){
+#    $restriction = qq(AND     ms.POSITION
+#                      BETWEEN	($start - ssm.START_COORDINATE - 99)
+#	              AND	($end - ssm.START_COORDINATE + 1));
 
-  }
+#  }
 
   if ($segid =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
     #get chromosome coordinates
-    $query = qq(SELECT 	distinct
-	(ms.position + ssm.START_COORDINATE -1) as snppos,
-	ms.id_snp as snp_id,
-	ss.default_name as snp_name,
-	ss.confirmation_status as status
-FROM 	chrom_seq cs,
-	seq_seq_map ssm,
-	mapped_snp ms,
-	snp_summary ss
-WHERE 	cs.DATABASE_SEQNAME='$segid'
-AND     cs.is_current = 1
-AND 	cs.ID_CHROMSEQ = ssm.ID_CHROMSEQ
-AND 	ms.ID_SEQUENCE = ssm.SUB_SEQUENCE
-AND	ss.id_snp = ms.id_snp
-
-$restriction
-ORDER BY SNPPOS);
+    $query = qq(SELECT
+                ss.ID_SNP                       as INTERNAL_ID,
+                ss.DEFAULT_NAME                 as ID_DEFAULT,
+                mapped_snp.POSITION + seq_seq_map.START_COORDINATE - 1
+                                                as CHR_START,
+                mapped_snp.END_POSITION + seq_seq_map.START_COORDINATE - 1
+                                                as CHR_END,
+                seq_seq_map.CONTIG_ORIENTATION  as CHR_STRAND,
+                scd.DESCRIPTION                 as VALIDATED,
+                ss.ALLELES                      as ALLELES,
+                svd.DESCRIPTION                 as SNPCLASS,
+                seq_seq_map.CONTIG_ORIENTATION  as CONTIG_ORI,
+                ss.IS_PRIVATE                   as PRIVATE,
+                snp.is_confirmed                as STATUS
+        FROM    chrom_seq,
+                database_dict,
+                seq_seq_map,
+                mapped_snp,
+                snp,
+                snpvartypedict svd,
+                snp_confirmation_dict scd,
+                snp_summary ss
+        WHERE   chrom_seq.DATABASE_SEQNAME= '$segid'
+        AND     database_dict.DATABASE_NAME = '$assm_name'
+        AND     database_dict.DATABASE_VERSION = '$assm_ver'
+        AND     database_dict.ID_DICT = chrom_seq.DATABASE_SOURCE
+        AND     chrom_seq.ID_CHROMSEQ = seq_seq_map.ID_CHROMSEQ
+        AND     seq_seq_map.SUB_SEQUENCE = mapped_snp.ID_SEQUENCE
+        AND     mapped_snp.ID_SNP = ss.ID_SNP
+        AND     ss.ID_SNP = snp.ID_SNP
+        AND     snp.VAR_TYPE = svd.ID_DICT
+        AND     ss.CONFIRMATION_STATUS = scd.ID_DICT
+        AND     mapped_snp.POSITION
+                BETWEEN
+                ($start - seq_seq_map.START_COORDINATE - 99)
+                AND
+                ($end - seq_seq_map.START_COORDINATE + 1)
+        ORDER BY
+                CHR_START
+);
 
   }
 #  elsif ($segid !~ /^\w+\.\w+\.\w+\.\w+$/i){
@@ -221,7 +226,7 @@ ORDER BY SNPPOS);
 
 for my $snp (@$snp){
   my $url = $self->{'link'};
-  my $link = $url . $snp->{'SNP_NAME'};
+  my $link = $url . $snp->{'ID_DEFAULT'};
   my $type = "Unknown";
   if ($snp->{'STATUS'} == 1){
     $type = "Sanger Verified";
@@ -233,11 +238,11 @@ for my $snp (@$snp){
     $type = "Two-Hit";
   }
   push @features, {
-		   'id'      => $snp->{'SNP_NAME'},
+		   'id'      => $snp->{'ID_DEFAULT'},
 		   'type'    => $type,
 		   'method'  => "snp",
-		   'start'   => $snp->{'SNPPOS'},
-		   'end'     => $snp->{'SNPPOS'},
+		   'start'   => $snp->{'CHR_START'},
+		   'end'     => $snp->{'CHR_END'},
 		   'ori'     => "0",
 		   'link'    => $link,
 		   'linktxt' => $self->{'linktxt'},

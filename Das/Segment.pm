@@ -1,12 +1,14 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.10 2004/02/25 17:19:00 lstein Exp $
+# $Id: Segment.pm,v 1.12 2004/04/23 21:11:54 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
 use Bio::Das::Util 'rearrange';
-use vars '@ISA';
+use vars qw(@ISA $VERSION);
 @ISA = qw(Bio::Root::Root Bio::Das::SegmentI);
+
+$VERSION = 0.90;
 
 use overload '""' => 'asString';
 *abs_ref   = *refseq = \&ref;
@@ -221,7 +223,7 @@ sub render {
       $track->add_feature($feature);
       next;
     }
-    my ($glyph,@style) = $stylesheet->style($feature);
+    my ($glyph,@style) = $stylesheet->style($feature) if $stylesheet;
     $glyph           ||= 'segments';
 
     my @config = ( -glyph   => $glyph,         # really generic

@@ -105,6 +105,7 @@ sub transport {
     eval "require $transport";
     warn $@ if($@);
     $self->{'_transport'} = $transport->new({
+					     'dsn'    => $self->{'dsn'}, # for debug purposes
 					     'config' => $self->config(),
 					    });
   }
@@ -282,6 +283,11 @@ sub das_features {
   }
 
   #########
+  # escape ampersands
+  #
+  $response =~ s/&/&amp;/smg;
+
+  #########
   # features by specific id
   #
   my $error_feature = 1;
@@ -338,7 +344,12 @@ sub das_features {
 
     }
   }
-  
+
+  #########
+  # escape ampersands
+  #
+  $response =~ s/&/&amp;/smg;
+
   return $response;
 }
 

@@ -19,14 +19,19 @@ disclaimers of warranty.
 
 =cut
 
+=head1 MAINTAINER
+
+Jody Clements <jc3@sanger.ac.uk>.
+
+=cut
+
 use strict;
-use vars qw(@ISA);
-use Bio::Das::ProServer::SourceAdaptor;
-@ISA = qw(Bio::Das::ProServer::SourceAdaptor);
+
+use base qw(Bio::Das::ProServer::SourceAdaptor);
+
 
 sub init {
   my $self                = shift;
-  $self->{'dsn'}          = "cosmic";
   $self->{'capabilities'} = {
 			     'features' => '1.0',
 			    };
@@ -34,13 +39,16 @@ sub init {
 
 sub length {
   my ($self, $seg) = @_;
-
+  my $gid = $seg;
+  $gid =~ s/^(.*?)_.*/$1/;
   if(!$self->{'_length'}->{$seg}) {
-    my $ref = $self->transport->query(qq(SELECT plength AS length
-					 FROM   locus
-					 WHERE  swissprot_id = '$seg'));
+    my $ref = $self->transport->query(qq(select length(t.transcript_aa_seq)AS LEN
+                                         from gene_som gs,
+                                         transcript t
+                                         where gs.gene_name = '$gid'
+                                         and gs.id_gene = t.id_gene));
     if(scalar @$ref) {
-      $self->{'_length'}->{$seg} = @{$ref}[0]->{'length'};
+      $self->{'_length'}->{$seg} = @{$ref}[0]->{'LEN'};
     }
   }
   return $self->{'_length'}->{$seg};
@@ -49,36 +57,64 @@ sub length {
 sub build_features {
   my ($self, $opts) = @_;
   my $spid    = $opts->{'segment'};
+  my $gid = $spid;
+  $gid =~ s/^(.*?)_.*/$1/;
   my $start   = $opts->{'start'};
   my $end     = $opts->{'end'};
   my $qbounds = "";
-  $qbounds    = qq(AND a.aa_start <= '$end' AND a.aa_start+a.aa_length >= '$start') if($start && $end);
-  my $query   = qq(SELECT a.id AS id, a.aa_start AS start, a.aa_length AS length
-		   FROM   allele a,sample_allele sa, sample s, locus l
-		   WHERE  a.id           = sa.allele_id
-		   AND    sa.sample_id   = s.id
-		   AND    s.locus_id     = l.id
-		   AND    l.swissprot_id = '$spid' $qbounds
-		   GROUP BY aa_start,aa_length);
+  $qbounds    = qq(AND sm.mut_start_position <= '$end' AND sm.mut_start_position+length(sm.mut_allele_seq) >= '$start') if($start && $end);
+
+  my $query   = qq(SELECT	SUBSTR(tr.transcript_aa_seq, sm.mut_start_position, 1) AS NORMAL,
+	sm.mut_start_position AS START_POINT,
+	sm.mut_allele_seq AS MUTANT,
+        t.paper_reference AS ID,
+	length(sm.mut_allele_seq) AS LEN
+FROM 	gene_som gsom,
+	gene_study gs,
+	analysed_gene_sample ags,
+	gene_sample_mutation gsm,
+        sample s,
+        tumour t,
+	mutation m,
+	sequence_mut sm,
+	transcript tr
+WHERE	gsom.gene_name = '$gid'
+AND	gsom.id_gene = gs.id_gene
+AND	gs.id_gene_study = ags.id_gene_study
+AND 	ags.id_ags = gsm.id_ags
+AND     ags.id_sample = s.id_sample
+AND     s.id_tumour = t.id_tumour
+AND 	gsm.id_mutation = m.id_mutation
+AND 	m.id_mutation = sm.id_mutation
+AND 	sm.aa_mapped_to_ref_cdna = 'y'
+AND	gs.id_gene = tr.id_gene
+$qbounds
+ORDER BY START_POINT);
+
   my $ref = $self->transport->query($query);
   my @features = ();
 
   for my $row (@{$ref}) {
-    my $start = $row->{'start'};
-    my $end   = $row->{'start'} + $row->{'length'} -1;
+    my $start  = $row->{'START_POINT'};
+    my $end    = $row->{'START_POINT'} + $row->{'LEN'} -1;
+    my $normal = $row->{'NORMAL'};
+    my $mutant = $row->{'MUTANT'};
+    my $id     = $row->{'ID'};
+    $id =~ s/(\w*?)::.*/$1/;
     ($start, $end) = ($end, $start) if($start > $end);
-    
     #########
     # safety catch. throw stuff which looks like it's out of bounds
     #
-    next if($start > $self->length($spid));
+    my $full_length = $self->length($spid);
+    next if($start > $full_length);
     
     push @features, {
-		     'id'     => $row->{'id'},
-		     'type'   => "cgpace",
-		     'method' => "cgpace",
+		     'id'     => $id,
+		     'type'   => "cosmic",
+		     'method' => "cosmic",
 		     'start'  => $start,
 		     'end'    => $end,
+		     'note'   => qq(Normal: $normal / Mutant: $mutant),
 		    };
   }
 

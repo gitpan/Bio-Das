@@ -39,30 +39,31 @@ sub new {
 		'port'       => '9000',
 		'adaptors' => {},
 	       };
-  ($inifile) = $inifile =~ /([a-zA-Z0-9_\/\.]+)/;
-
+  ($inifile) = $inifile =~ /([a-zA-Z0-9_\/\.\-]+)/;
+  
   if($inifile && -f $inifile) {
-      my $conf = Config::IniFiles->new(
-				       -file => $inifile,
-				       );
-      #########
-      # load general parameters
-      #
-      for my $f (qw(hostname prefork maxclients port ensemblhome oraclehome bioperlhome http_proxy)) {
-	  $self->{$f} = $conf->val("general", $f) if($conf->val("general", $f));
+    my $conf = Config::IniFiles->new(
+				     -file => $inifile,
+				    );
+    #########
+    # load general parameters
+    #
+    for my $f (qw(hostname interface prefork maxclients pidfile port ensemblhome oraclehome bioperlhome http_proxy)) {
+      $self->{$f} = $conf->val("general", $f) if($conf->val("general", $f));
+	print STDERR qq(**** $f => $self->{$f} ****\n);
+    }
+    
+    #########
+    # build the adaptors substructure
+    #
+    for my $s ($conf->Sections()) {
+      next if ($s eq "general");
+      print STDERR qq(Configuring Adaptor $s );
+      for my $p ($conf->Parameters($s)) {
+	$self->{'adaptors'}->{$s}->{$p} = $conf->val($s, $p);
+	print STDERR $self->{'adaptors'}->{$s}->{$p}, "\n" if($p eq "state");
       }
-
-      #########
-      # build the adaptors substructure
-      #
-      for my $s ($conf->Sections()) {
-	next if ($s eq "general");
-	print STDERR qq(Configuring Adaptor $s );
-	for my $p ($conf->Parameters($s)) {
-	  $self->{'adaptors'}->{$s}->{$p} = $conf->val($s, $p);
-	  print STDERR $self->{'adaptors'}->{$s}->{$p}, "\n" if($p eq "state");
-	}
-      }
+    }
   }
 
   bless $self,$class;
@@ -87,9 +88,16 @@ sub maxclients {
   return $self->{'maxclients'};
 }
 
+sub pidfile {
+  my $self = shift;
+  ($self->{'pidfile'}) = $self->{'pidfile'} =~ /([a-zA-Z0-9\/\-_\.]+)/;
+  return $self->{'pidfile'};
+}
+
 sub host {
   my $self = shift;
-  ($self->{'hostname'}) = $self->{'hostname'} =~ /([a-zA-Z0-9\/\-_\.]+)/;
+  my $h    = $self->{'interface'} || $self->{'hostname'};
+  ($self->{'hostname'}) = $h =~ /([a-zA-Z0-9\/\-_\.]+)/;
   return $self->{'hostname'};
 }
 

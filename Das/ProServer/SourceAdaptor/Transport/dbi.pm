@@ -34,20 +34,41 @@ sub dbh {
   my $password = $self->config->{'password'} || "";
   my $driver   = $self->config->{'driver'}   || "mysql";
   my $dsn      = qq(DBI:$driver:database=$dbname;host=$host;port=$port);
-  $self->{'dbh'} ||= DBI->connect($dsn, $username, $password, {RaiseError => 1});
+
+  #########
+  # DBI connect_cached is slightly smarter than us just caching here
+  #
+  eval {
+    $self->{'dbh'} = DBI->connect_cached($dsn, $username, $password, {RaiseError => 1});
+#  $self->{'dbh'} ||= DBI->connect($dsn, $username, $password, {RaiseError => 1});
+  };
+  if($@) {
+    print STDERR "dsn = ", $self->{'dsn'},"\n";
+    die $@;
+  }
   return $self->{'dbh'};
 }
 
 sub query {
-  my $self = shift;
-  my $ref  = [];
-  eval {
-    my $sth  = $self->dbh->prepare(@_);
-    $sth->execute();
-    $ref  = $sth->fetchall_arrayref({});
-    $sth->finish();
-  };
-  warn $@ if($@);
+  my $self    = shift;
+  my $ref     = [];
+  my $retries = 5;
+
+  while($retries > 0) {
+    eval {
+      my $sth  = $self->dbh->prepare(@_);
+      $sth->execute();
+      $ref  = $sth->fetchall_arrayref({});
+      $sth->finish();
+    };
+    if($@) {
+      warn $@;
+      $retries --;
+
+    } else {
+      last;
+    }
+  }
   return $ref;
 }
 

@@ -6,7 +6,7 @@
 # Created: 2003-05-22
 # Last Modified: 2003-06-12
 #
-use lib qw(./blib/lib ../blib/lib);
+use lib qw(./blib/lib ../blib/lib .);
 package proserver;
 
 =head1 AUTHOR
@@ -17,7 +17,7 @@ Based on AGPServer by
 
 Tony Cox <avc@sanger.ac.uk>.
 
-Copyright (c) 2003 The Sanger Institute
+Copyright (c) 2004 GRL (The Sanger Institute)
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.  See DISCLAIMER.txt for
@@ -50,11 +50,17 @@ my $result = GetOptions(
 			'help|?'       => \$opts{'usage'},
 			'c|config:s'   => \$opts{'inifile'},
 		       );
+
+print STDERR qq(##########################################################
+#  Starting ProServer Daemon (c) GRL 2004...             #
+#  http://www.sanger.ac.uk/Software/analysis/proserver/  #
+##########################################################\n);
 @ARGV = @saveargv;
 my $config = Bio::Das::ProServer::Config->new($opts{'inifile'});
 
 $config->{'port'}     = $opts{'port'}            if(defined $opts{'port'});
 $config->{'hostname'} = $opts{'hostname'}        if(defined $opts{'hostname'});
+
 if(exists $config->{'ensemblhome'}) {
   $ENV{'ENS_ROOT'}      = $config->{'ensemblhome'};
   print STDERR qq(Set ENS_ROOT to $ENV{'ENS_ROOT'}\n);
@@ -63,6 +69,11 @@ if(exists $config->{'ensemblhome'}) {
 if(exists $config->{'oraclehome'}) {
   $ENV{'ORACLE_HOME'}   = $config->{'oraclehome'};
   print STDERR qq(Set ORACLE_HOME to $ENV{'ORACLE_HOME'}\n);
+}
+
+if(exists $config->{'bioperlhome'}) {
+  $ENV{'BIOPERL_HOME'}   = $config->{'bioperlhome'};
+  print STDERR qq(Set BIOPERL_HOME to $ENV{'BIOPERL_HOME'}\n);
 }
 
 if(defined $opts{'dsn'}) {

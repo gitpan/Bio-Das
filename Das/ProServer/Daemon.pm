@@ -27,7 +27,8 @@ use CGI;
 use Bio::Das::ProServer::Config;
 $| = 1;
 
-use vars qw/%CHILDREN $CHILDREN $DEBUG/;
+use vars qw/%CHILDREN $CHILDREN $DEBUG $VERSION/;
+$VERSION = "1.5";
 
 sub new {
   my ($class, $config) = @_;
@@ -47,24 +48,23 @@ sub config {
 # main control loop
 #
 sub handle {
-  my $self    = shift;
-  my $config  = $self->config();
-  my $host    = $config->host();
-  my $port    = $config->port();
-  my $prefork = $config->prefork();
-  
+  my $self     = shift;
+  my $config   = $self->config();
+  my $host     = $config->host();
+  my $port     = $config->port();
+  my $prefork  = $config->prefork();
   my $HOSTNAME = &hostname();
-  my $PIDFILE  = "$0.$HOSTNAME.pid";
-  my $VERSION  = "v1.1";
+  my $PIDFILE  = $config->pidfile()?($config->pidfile()):"$0.$HOSTNAME.pid";
   my $DEBUG    = 1;
   
-  $self->log("Proserver $VERSION startup...");
+  $self->log("Proserver v$VERSION startup...");
+  $self->log("Listening on host:port $host:$port");
   # establish SERVER socket, bind and listen.
-  my $server       = HTTP::Daemon->new(
-				       ReuseAddr => 1,
-				       LocalAddr => $host,
-				       LocalPort => $port,
-				      ) or die "Cannot start daemon: $!\n";
+  my $server   = HTTP::Daemon->new(
+				   ReuseAddr => 1,
+				   LocalAddr => $host,
+				   LocalPort => $port,
+				   ) or die "Cannot start daemon: $!\n";
   
   $self->socket_server($server);
   my $url = $server->url();
@@ -77,12 +77,12 @@ sub handle {
   
   my $pid = $self->make_pid_file($PIDFILE);
   $self->log("Wrote parent PID to $PIDFILE [PID: $pid]");
-  
   $self->log("Please contact this server at this URL: $url");
   
   # Install signal handlers.
   $SIG{CHLD}  = \&REAPER;
   $SIG{INT}   = \&HUNTSMAN;
+  $SIG{TERM}  = \&HUNTSMAN;
   $SIG{USR1}  = \&RESTART;
   $SIG{HUP}   = \&RESTART;
   
@@ -432,13 +432,11 @@ sub log {
 #
 sub make_pid_file {
   my ($self, $pidfile) = @_;
-  my $hostname  = &hostname();
 
-  ($pidfile) = $pidfile =~ /([a-zA-Z0-9\.\/\_]+)/;
+  ($pidfile) = $pidfile =~ /([a-zA-Z0-9\.\/_\-]+)/;
   open (PID, ">$pidfile") or die "Cannot create pid file: $!\n";
   print PID "$$\n";
   close(PID);
-  #$self->log("[Parent pid on $hostname: $$]");
   return($$);
 }
 

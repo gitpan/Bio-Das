@@ -22,27 +22,20 @@ disclaimers of warranty.
 
 =cut
 
+my $root;
+
 BEGIN {
-  my $root = $ENV{'ENS_ROOT'};
+  $root = $ENV{'ENS_ROOT'};
   if(!defined $ENV{'ENSEMBL_SPECIES'} || $ENV{'ENSEMBL_SPECIES'} eq ""){
     print STDERR qq(No species defined... default to Homo_sapiens\n);
     $ENV{'ENSEMBL_SPECIES'} = "Homo_sapiens" ;
   }
   print STDERR qq(species = $ENV{'ENSEMBL_SPECIES'}\n);
   unshift(@INC,"$root/modules");
-  unshift(@INC,"$root/ensembl/modules");
-  unshift(@INC,"$root/ensembl-draw/modules");
-  unshift(@INC,"$root/ensembl-map/modules");
-  unshift(@INC,"$root/ensembl-compara/modules");
-  unshift(@INC,"$root/ensembl-external/modules");
-  unshift(@INC,"$root/conf");
-  unshift(@INC,"$root/perl");
-  unshift(@INC,"$root/bioperl-live");
 }
 
 use strict;
-use EnsWeb;
-use EnsEMBL::DB::Core;
+use IndexSupport;
 use base qw(Bio::Das::ProServer::SourceAdaptor);
 use Time::HiRes qw(gettimeofday);
 
@@ -58,18 +51,19 @@ sub init{
 
 sub length{
   my ($self,$seg) = @_;
-  if ($seg !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
-    #get contig coordinates
-    return;
-  }
-  if (!$self->{'_length'}->{$seg}){
-    my $databases = &EnsEMBL::DB::Core::get_databases('core');
-    my $ca = $databases->{'core'}->get_ChromosomeAdaptor();
-    my $chromosome = $ca->fetch_by_chr_name($seg);
-    $self->{'_length'}->{$seg} = $chromosome->length();
-  }
-  return $self->{'_length'}->{$seg};
+   if ($seg =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i && !$self->{'_length'}->{$seg}){
+  
+     my $conf = IndexSupport->new("$root/conf",'','Homo_sapiens');
+     my($length) = $conf->{'dbh'}->selectrow_array(qq(
+                       SELECT length FROM seq_region where name = ?
+                       ), {}, $seg );
+
+
+    $self->{'_length'}->{$seg} = $length;
+   }
+ return $self->{'_length'}->{$seg};
 }
+
 
 sub das_stylesheet{
   my ($self) = @_;
@@ -111,63 +105,73 @@ sub build_features{
   my  $t0 = gettimeofday;
   
   my ($self,$opts) = @_;
-  my $segid  = $opts->{'segment'};
-  my $start = $opts->{'start'};
-  my $end   = $opts->{'end'};
+  my $segid     = $opts->{'segment'};
+  my $start     = $opts->{'start'};
+  my $end       = $opts->{'end'};
+  my $assm_name = $self->config->{'assm_name'};
+  my $assm_ver  = $self->config->{'assm_ver'};
+  my @features  = ();
 
-  warn "Building started for: ",$segid," at ",$t0,"\n";
+  if ($segid !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
+    return @features;
+  }
+
+
 #####
 #  if $end - $start = too big then return some sort of average 
 #  density across the area selected. this should reduce the load
 #  times when a large sequence is requested. Maybe anything greater
 #  than a kilobase.
 #####
-  my @features = ();
+  
   if (!$end){
     return @features;
   }
 
-my $query = qq(SELECT 	DISTINCT (ms.contig_match_start + ssm.start_coordinate -1) as start_coord,
-	(ms.contig_match_end + ssm.start_coordinate -1) as end_coord,
-	ms.snp_rea_id_read as read_id,
-	sr.readname,
-	ms.is_revcomp as orientation
-FROM	chrom_seq cs,
-	seq_seq_map ssm,
-	snp_sequence ss,
-	mapped_seq ms,
-	snp_read sr
-WHERE	cs.database_seqname = '$segid'
-AND	cs.id_chromseq = ssm.id_chromseq
-AND	ssm.sub_sequence = ss.id_sequence
-AND	ms.id_sequence = ss.id_sequence
-AND	ms.snp_rea_id_read = sr.id_read
-AND     cs.is_current = 1
-AND     ( (ms.is_revcomp = 0 and 
-            ms.contig_match_start between $start-10000-ssm.start_coordinate and $end-ssm.start_coordinate+1 AND
-            ms.contig_match_end > $start-ssm.start_coordinate+1 ) or (
-          ms.is_revcomp = 1 and 
-            ms.contig_match_start between $start-ssm.start_coordinate+1     and $end-ssm.start_coordinate+10000 AND
-            ms.contig_match_end < $end-ssm.start_coordinate+1))
-order by start_coord);
+my $query = qq(SELECT
+                ms.snp_rea_id_read      as read_id,
+                sr.readname             as readname,
+                ms.contig_match_start   as contig_start,
+                ms.contig_match_end     as contig_end,
+                ms.contig_orientation   as read_ori,
+                ms.read_match_start     as read_start,
+                ms.read_match_end       as read_end,
+                ssm.start_coordinate    as chr_start,
+                ssm.end_coordinate      as chr_end,
+                ssm.contig_orientation  as contig_ori
+        FROM    chrom_seq cs,
+                seq_seq_map ssm,
+                mapped_seq ms,
+                snp_read sr,
+                database_dict dd
+        WHERE   cs.database_seqname = '$segid'
+        AND     dd.database_version = '$assm_ver'
+        AND     dd.database_name = '$assm_name'
+        AND     cs.database_source = dd.id_dict
+        AND     cs.id_chromseq = ssm.id_chromseq
+        AND     ssm.sub_sequence = ms.id_sequence
+        AND     ms.snp_rea_id_read = sr.id_read
+        AND     ssm.start_coordinate
+                BETWEEN
+                ($start - ms.contig_match_end + 1)
+                AND
+                ($end - ms.contig_match_start + 1)
+);
 
 my $t1 = gettimeofday;
-warn "Query begun ",$t1 - $t0,"\n";
+
 
 my $trace = $self->transport->query($query);
 
 my $t2 = gettimeofday;
-warn "Query ended ",$t2 - $t0,"\n";
-warn "Query duration ",$t2 -$t1,"\n";
-warn "Feature building begins ",$t2 - $t0,"\n";
 
   for my $trace (@$trace){
     my $url = $self->{'link'};
     my $link = $url . $trace->{'READNAME'};
-    my $ori = ($trace->{'ORIENTATION'} == 1)?"-":"+";
-    my $type = ($trace->{'ORIENTATION'} == 1)?"Forward":"Reverse";
-    my $start = $trace->{'START_COORD'}; 
-    my $end = $trace->{'END_COORD'};
+    my $ori = ($trace->{'READ_ORI'} == 1)?"+":"-";
+    my $type = ($trace->{'READ_ORI'} == 1)?"Forward":"Reverse";
+    my $start = $trace->{'CHR_START'} + $trace->{'CONTIG_START'} - 1; 
+    my $end = $trace->{'CHR_START'} + $trace->{'CONTIG_END'} - 1;
 
     if ($start > $end){
       ($start,$end) = ($end,$start);
@@ -187,8 +191,6 @@ warn "Feature building begins ",$t2 - $t0,"\n";
   }
 
 my $t4 = gettimeofday;
-warn "Feature building done ",$t4 - $t0,"\n";
-warn "feature build duration ",$t4 - $t2,"\n";
 
   return @features;
 }

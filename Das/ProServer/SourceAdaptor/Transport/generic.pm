@@ -24,6 +24,7 @@ use strict;
 sub new {
   my ($class, $defs) = @_;
   my $self = {
+	      'dsn'    => $defs->{'dsn'}    || "unknown",
               'config' => $defs->{'config'} || {},
              };
   bless $self, $class;

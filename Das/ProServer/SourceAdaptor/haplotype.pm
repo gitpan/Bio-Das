@@ -22,26 +22,22 @@ it under the same terms as Perl itself.  See DISCLAIMER.txt for
 disclaimers of warranty.
 
 =cut
+
+my $root;
+
 BEGIN {
-  my $root = "/ensweb/www/server";
+  $root = $ENV{'ENS_ROOT'};
   if(!defined $ENV{'ENSEMBL_SPECIES'} || $ENV{'ENSEMBL_SPECIES'} eq ""){
     print STDERR qq(No species defined... default to Homo_sapiens\n);
     $ENV{'ENSEMBL_SPECIES'} = "Homo_sapiens" ;
   }
   print STDERR qq(species = $ENV{'ENSEMBL_SPECIES'}\n);
   unshift(@INC,"$root/modules");
-  unshift(@INC,"$root/ensembl/modules");
-  unshift(@INC,"$root/ensembl-draw/modules");
-  unshift(@INC,"$root/ensembl-map/modules");
-  unshift(@INC,"$root/ensembl-compara/modules");
-  unshift(@INC,"$root/ensembl-external/modules");
-  unshift(@INC,"$root/conf");
-  unshift(@INC,"$root/perl");
-  unshift(@INC,"$root/bioperl-live");
 }
+
+
 use strict;
-use EnsWeb;
-use EnsEMBL::DB::Core;
+use IndexSupport;
 use base qw(Bio::Das::ProServer::SourceAdaptor);
 
 sub init{
@@ -56,13 +52,17 @@ sub init{
 
 sub length{
   my ($self,$seg) = @_;
-  if (!$self->{'_length'}->{$seg} && $seg =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
-    my $databases = &EnsEMBL::DB::Core::get_databases('core');
-    my $ca = $databases->{'core'}->get_ChromosomeAdaptor();
-    my $chromosome = $ca->fetch_by_chr_name($seg);
-    $self->{'_length'}->{$seg} = $chromosome->length();
-  }
-  return $self->{'_length'}->{$seg};
+   if ($seg =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i && !$self->{'_length'}->{$seg}){
+  
+     my $conf = IndexSupport->new("$root/conf",'','Homo_sapiens');
+     my($length) = $conf->{'dbh'}->selectrow_array(qq(
+                       SELECT length FROM seq_region where name = ?
+                       ), {}, $seg );
+
+
+    $self->{'_length'}->{$seg} = $length;
+   }
+ return $self->{'_length'}->{$seg};
 }
 
 sub das_stylesheet{
@@ -126,45 +126,59 @@ sub das_stylesheet{
 
 sub build_features{
   my ($self,$opts) = @_;
-  my $segid  = $opts->{'segment'};
-  my $start = $opts->{'start'};
-  my $end   = $opts->{'end'};
+  my $segid     = $opts->{'segment'};
+  my $start     = $opts->{'start'};
+  my $end       = $opts->{'end'};
+  my $assm_name = $self->config->{'assm_name'};
+  my $assm_ver  = $self->config->{'assm_ver'};
+
   my @features = ();
   if (!$end || $segid !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
     return @features;
   }
 
- my  $query = qq(SELECT         distinct (ms.position + ssm.START_COORDINATE -1)
-    as snppos,
-           ms.id_snp as snp_id,
-           sb.id_block as block,
-            b.name as block_name,
-            b.id_block_set as block_set,
-            p.description as population,
-            bs.maf as maf
-   FROM    chrom_seq cs,
-           seq_seq_map ssm,
-           mapped_snp ms,
-           snp_summary ssum,
-           snp_block sb,
-           block b,
-           block_set bs,
-           population p
-   WHERE   cs.DATABASE_SEQNAME='$segid'
-   AND     cs.is_current = 1
-   AND     cs.ID_CHROMSEQ = ssm.ID_CHROMSEQ
-   AND     ms.id_sequence = ssm.sub_sequence
-   AND     ssum.id_snp = ms.id_snp
-   AND     ssum.id_snp = sb.id_snp
-   AND     sb.id_block = b.id_block
-   AND     b.id_block_set = bs.id_block_set
-   AND     bs.id_pop = p.id_pop
-   AND     ms.position 
-           BETWEEN
-           ($start - ssm.START_COORDINATE - 99) 
-           AND 
-           ($end - ssm.start_coordinate + 1)
-   ORDER BY snppos);
+ my  $query = qq( SELECT
+                ms.position + ssm.start_coordinate - 1
+                                    as start_coord,
+                ms.end_position + ssm.start_coordinate - 1
+                                    as end_coord,
+                ms.id_snp           as id_snp,
+                sb.id_block         as block,
+                b.length            as block_length,
+                b.num_snps          as num_snps,
+                p.description       as population,
+                p.id_pop            as id_pop,
+                ssum.is_private     as private_snp,
+                bs.is_private       as private_block,
+                bs.maf              as maf
+        FROM    chrom_seq cs,
+                database_dict dd,
+                seq_seq_map ssm,
+                mapped_snp ms,
+                snp_summary ssum,
+                snp_block sb,
+                block b,
+                block_set bs,
+                population p
+        WHERE   cs.database_seqname = '$segid'
+        AND     dd.database_name = '$assm_name'
+        AND     dd.database_version = '$assm_ver'
+        AND     dd.id_dict = cs.database_source
+        AND     ssm.id_chromseq = cs.id_chromseq
+        AND     ms.id_sequence = ssm.sub_sequence
+        AND     ssum.id_snp = ms.id_snp
+        AND     ssum.id_snp = sb.id_snp
+        AND     sb.id_block = b.id_block
+        AND     b.id_block_set = bs.id_block_set
+        AND     bs.id_pop = p.id_pop
+        AND     ms.position
+                BETWEEN
+                ($start - ssm.start_coordinate - 99)
+                AND
+                ($end - ssm.start_coordinate + 1)
+        ORDER BY
+                start_coord
+);
 
 
 my $haplotype = $self->transport->query($query);
@@ -178,8 +192,8 @@ my $haplotype = $self->transport->query($query);
 		     'id'      => $haplotype->{'BLOCK'},
 		     #'group'   => $haplotype->{'BLOCK_SET'},
 		     'method'  => "haplotype",
-		     'start'   => $haplotype->{'SNPPOS'},
-		     'end'     => $haplotype->{'SNPPOS'},
+		     'start'   => $haplotype->{'START_COORD'},
+		     'end'     => $haplotype->{'END_COORD'},
 		     'link'    => $link,
 		     'linktxt' => $self->{'linktxt'},
 		     'typecategory' => "haplotype",

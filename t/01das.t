@@ -35,6 +35,7 @@ sub bail {
 my $db = Bio::Das->new(-server=>SERVER,
 		       -aggregators=>['Coding_transcript{coding_exon/CDS}',
 				     'alignment',
+				      'EST_match{EST_match}',
 				    ]
 		       ,
 		      );
@@ -83,7 +84,7 @@ bail unless $i;
 
 # the type of this feature should be 'Segment'
 # and its category should be 'structural'
-test(15,lc ($i->type) eq 'sequence:link');
+test(15,lc ($i->type) eq 'region:link');
 test(16,$i->category eq 'structural');
 
 # see if we can't get some transcrips
@@ -105,7 +106,7 @@ test(21,$e[-1]->stop == $t->stop);
 test(22,$t->link eq $e[0]->link);
 
 # test similarity features
-my @s = $s->features(-type=>'alignment:BLAT_EST_BEST'); # BLAT_EST_BEST
+my @s = $s->features(-type=>'EST_match:BLAT_EST_BEST'); # BLAT_EST_BEST
 test(23,@s);
 @s or bail;
 
