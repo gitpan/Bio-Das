@@ -1,7 +1,8 @@
 #!/usr/local/bin/perl
 
-use lib './blib/lib','../blib/lib';
+use lib '.','./blib/lib','../blib/lib';
 use Bio::Das;
+use Carp 'cluck';
 
 my $das = Bio::Das->new(15);  # timeout of 15 sec
 # $das->debug(1);
@@ -15,10 +16,12 @@ my $callback = sub {
   print "$segment => $feature ($start,$stop)\n";
 };
 
-my $response = $das->features(-dsn => 'http://genome.cse.ucsc.edu/cgi-bin/das/hg8',  #hg7,8 have problems
+$das->debug(0);
+
+my $response = $das->features(-dsn => 'http://genome.cse.ucsc.edu/cgi-bin/das/hg16',
 			      -segment => [
-					   'chr22:13000000,13100000',
-					   'chr1:1000000,1020000'
+					   'chr1:1000000,1020000',
+					   'chr22:17000000,17010000',
 					  ],
 			      -category => 'transcription',
 			      -callback => $callback

@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.10 2003/12/10 19:47:35 lstein Exp $
+# $Id: Features.pm,v 1.11 2004/01/02 01:40:46 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -79,15 +79,33 @@ sub t_SEGMENT {
   }
 
   else {  # reached the end of the segment, so push result
-    if ($self->segment_callback) {
-      eval {$self->segment_callback->($self->{tmp}{current_segment}=>$self->{tmp}{features})};
-      warn $@ if $@;
-    } else {
-      $self->add_object($self->{tmp}{current_segment},$self->{tmp}{features});
-    }
+    $self->finish_segment();
   }
 
 }
+
+sub finish_segment {
+  my $self = shift;
+  if ($self->segment_callback) {
+    eval {$self->segment_callback->($self->{tmp}{current_segment}=>$self->{tmp}{features})};
+    warn $@ if $@;
+  } else {
+    $self->add_object($self->{tmp}{current_segment},$self->{tmp}{features});
+  }
+  delete $self->{tmp}{current_segment};
+}
+
+sub cleanup {
+  my $self = shift;
+  # this fixes a problem in the UCSC server
+  $self->finish_segment if $self->{tmp}{current_segment};
+}
+
+sub add_object {
+  my $self = shift;
+  push @{$self->{results}},@_;
+}
+
 
 # do nothing
 sub t_UNKNOWNSEGMENT { }
@@ -125,7 +143,10 @@ sub t_TYPE {
 
   if ($attrs) {  # tag starts
     $cft->id($attrs->{id});
-    $cft->category($attrs->{category}) if $attrs->{category};
+    $cft->category($attrs->{category})   if $attrs->{category};
+    $cft->reference(1)    if $attrs->{reference} && $attrs->{reference} eq 'yes';
+    $cft->has_subparts(1) if $attrs->{subparts} && $attrs->{subparts} eq 'yes';
+    $cft->has_superparts(1) if $attrs->{superparts} && $attrs->{superparts} eq 'yes';
   } else {
 
     # possibly add a label

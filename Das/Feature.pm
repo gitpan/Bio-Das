@@ -134,7 +134,7 @@ sub method {
 sub category {
   my $self = shift;
   my $type = $self->type or return;
-  $type->category;
+  eval {$type->category} || $type->method;
 }
 
 sub reference {
@@ -398,6 +398,11 @@ sub compound  {
 sub primary_tag { shift->type   }
 sub class       { shift->method }
 sub source_tag  { shift->method }
+sub source      {
+  my $type = shift->type;
+  my ($method,$source) = split ':',$type;
+  return $source;
+}
 sub has_tag     { undef         }
 sub all_tags    {
   my $self = shift;

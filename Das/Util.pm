@@ -52,3 +52,36 @@ sub rearrange {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Bio::Das::Util - Das Utilities
+
+=head1 SYNOPSIS
+
+none
+
+=head1 DESCRIPTION
+
+This module contains yet another implementation of the rearrange()
+call, which is used to convert -name=>argument style argument passing
+into positional arguments.
+
+=head1 AUTHOR
+
+Lincoln Stein <lstein@cshl.org>.
+
+Copyright (c) 2004 Cold Spring Harbor Laboratory
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=head1 SEE ALSO
+
+L<Bio::Das::Request>, L<Bio::Das::HTTP::Fetch>,
+L<Bio::Das::Segment>, L<Bio::Das::Type>, L<Bio::Das::Stylesheet>,
+L<Bio::Das::Source>, L<Bio::RangeI>
+

@@ -1,6 +1,28 @@
 package Bio::Das::Request::Entry_points;
-# $Id: Entry_points.pm,v 1.3 2003/12/06 00:15:39 lstein Exp $
+# $Id: Entry_points.pm,v 1.5 2004/01/03 00:23:40 lstein Exp $
 # this module issues and parses the entry_points command, with the ref argument
+
+=head1 NAME
+
+Bio::Das::Request::Entry_points - The DAS "entry_points" request
+
+=head1 SYNOPSIS
+
+ my @entry_points         = $request->results;
+ my $das_command          = $request->command;
+ my $successful           = $request->is_success;
+ my $error_msg            = $request->error;
+ my ($username,$password) = $request->auth;
+
+=head1 DESCRIPTION
+
+This is a subclass of L<Bio::Das::Request> specialized for the
+"entrypoints" command.  It is used to retrieve the entry points
+(landmarks) known to a set of DAS servers.
+
+All methods are as described in L<Bio::Das::Request>.
+
+=cut
 
 use strict;
 use Bio::Das::DSN;
@@ -44,7 +66,6 @@ sub t_SEGMENT {
   my $self  = shift;
   my $attrs = shift;
   if ($attrs) {    # segment section is starting
-    warn "in entry_points:",join ',',%$attrs;
     $self->{current_ep} = Bio::Das::Segment->new($attrs->{id},
 						 $attrs->{start}||1,
 						 $attrs->{stop}||$attrs->{size},
@@ -59,6 +80,24 @@ sub t_SEGMENT {
     $self->add_object($self->{current_ep});
   }
 }
+
+=head1 AUTHOR
+
+Lincoln Stein <lstein@cshl.org>.
+
+Copyright (c) 2001 Cold Spring Harbor Laboratory
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=head1 SEE ALSO
+
+L<Bio::Das::Request>, L<Bio::Das::HTTP::Fetch>,
+L<Bio::Das::Segment>, L<Bio::Das::Type>, L<Bio::Das::Stylesheet>,
+L<Bio::Das::Source>, L<Bio::RangeI>
+
+=cut
 
 1;
 

@@ -1,6 +1,43 @@
 package Bio::Das::Request::Stylesheet;
-# $Id: Stylesheet.pm,v 1.2 2003/05/22 19:46:55 avc Exp $
+# $Id: Stylesheet.pm,v 1.4 2004/01/03 00:23:40 lstein Exp $
 # this module issues and parses the stylesheet command, with arguments -dsn
+
+=head1 NAME
+
+Bio::Das::Request::Stylesheet - The DAS "stylesheet" request
+
+=head1 SYNOPSIS
+
+ my @stylesheets          = $request->results;
+ my $das_command          = $request->command;
+ my $successful           = $request->is_success;
+ my $error_msg            = $request->error;
+ my ($username,$password) = $request->auth;
+
+=head1 DESCRIPTION
+
+This is a subclass of L<Bio::Das::Request> specialized for the
+"stylesheet" command.  The results() method returns a series of
+L<Bio::Das::Stylesheet> objects.  All other methods are as described
+in L<Bio::Das::Request>.  .
+
+=head1 AUTHOR
+
+Lincoln Stein <lstein@cshl.org>.
+
+Copyright (c) 2003 Cold Spring Harbor Laboratory
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=head1 SEE ALSO
+
+L<Bio::Das::Request>, L<Bio::Das::HTTP::Fetch>, L<Bio::Das::Segment>,
+L<Bio::Das::Type>, L<Bio::Das::Stylesheet>, L<Bio::Das::Source>,
+L<Bio::RangeI>
+
+=cut
 
 use strict;
 use Bio::Das::Request;
@@ -15,14 +52,14 @@ use vars '@ISA';
 # $category,$type,$zoom,$glyph,$attributes
 # All arguments are strings with exception of $attributes, which is a
 # hashref of attribute=>value pairs
-sub new {
-  my $pack = shift;
-  my ($dsn,$callback) = rearrange([['dsn','dsns'],'callback'],@_);
-  my $self = $pack->SUPER::new(-dsn => $dsn,
-			       -callback  => $callback,
-			       -args => { } );
-  $self;
-}
+#sub new {
+#  my $pack = shift;
+#  my ($dsn,$callback) = rearrange([['dsn','dsns'],'callback'],@_);
+#  my $self = $pack->SUPER::new(-dsn => $dsn,
+#			       -callback  => $callback,
+#			       -args => { } );
+#  $self;
+#}
 
 sub command { 'stylesheet' }
 

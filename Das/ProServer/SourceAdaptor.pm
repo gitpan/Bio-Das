@@ -372,7 +372,7 @@ sub das_types {
 # close dna/sequence response
 #
 sub close_dassequence {
-  qq(</DASDNA\n);
+  qq(</DASDNA>\n);
 }
 
 #########

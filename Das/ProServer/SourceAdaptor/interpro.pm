@@ -64,7 +64,7 @@ sub build_features {
   
   if(scalar @{$self->{'_features'}->{$seg}} == 0) {
     $self->{'_data'}->{$seg} ||= $self->transport->query('-e', "[IPRMATCHES:$seg]|[IPRMATCHES-pnm:$seg]");
-    $self->{'_data'}->{$seg} =~ s/<interpro.*?name="(.*?)".*?<match id="(\S+)" name="(\S+)" dbname="(\S+)">(.*?)<\/match>/&_add_iprmatches_feature($self, $opts, $1, $2, $3, $4, $5)/smeg;
+    $self->{'_data'}->{$seg} =~ s/<interpro.*?name="(.*?)".*?<match id="(\S+)" name="(\S+)" dbname="(\S+)">(.*?)<\/match>/&_add_iprmatches_feature($self, $opts, $1, $2, $3, $4, $5)/smegi;
   }
   
   return @{$self->{'_features'}->{$seg}};
@@ -73,7 +73,7 @@ sub build_features {
 sub _add_iprmatches_feature {
   my ($self, $opts, $iprname, $matchid, $matchname, $matchdbname, $location)= @_;
   
-  $location =~ s/<location start="(\S+)" end="(\S+)".*?evidence="(\S+)" \/>/&_add_iprmatches_location($self, $opts, $iprname, $matchid, $matchname, $matchdbname, $1, $2, $3)/smeg;
+  $location =~ s/<location start="(\S+)" end="(\S+)".*?evidence="(\S+)".*?\/>/&_add_iprmatches_location($self, $opts, $iprname, $matchid, $matchname, $matchdbname, $1, $2, $3)/smegi;
   
   return "";
 }
@@ -90,8 +90,8 @@ sub _add_iprmatches_location {
   
   push @{$self->{'_features'}->{$opts->{'segment'}}}, {
 						       'id'     => $matchid,
-						       'type'   => "$matchdbname:$iprname",
-						       'method' => $matchdbname,
+						       'type'   => $matchdbname,
+						       'method' => "$matchdbname:$iprname",
 						       'start'  => $ftstart,
 						       'end'    => $ftend,
 						       'note'   => "$ftevidence:$matchname",

@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.7 2003/12/29 23:20:32 lstein Exp $
+# $Id: Segment.pm,v 1.8 2004/01/02 22:09:00 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -40,7 +40,13 @@ sub features {
   my $self = shift;
   my $das = $self->das;
   my $dsn = $self->dsn;
-  return $das->features(@_,
+  my @args;
+  unless ($_[0] =~ /^-/) {
+    @args = (-types => \@_);
+  } else {
+    @args = @_;
+  }
+  return $das->features(@args,
 			-dsn => $dsn,
 			-segment=> [$self->asString]);
 }
@@ -237,12 +243,12 @@ __END__
 
 =head1 NAME
 
-Bio::Das::Segment - Serialized access to Bio::Das sequence "segments"
+Bio::Das::Segment - Serial access to Bio::Das sequence "segments"
 
 =head1 SYNOPSIS
 
    # SERIALIZED API
-   my $das = Bio::Das->new(-source => 'http://www.wormbase.org/db/das',
+   my $das = Bio::Das->new(-server => 'http://www.wormbase.org/db/das',
                            -dsn    => 'elegans',
                            -aggregators => ['primary_transcript','clone']);
    my $segment  = $das->segment('Chr1');
@@ -269,6 +275,19 @@ its features and/or DNA.
 
 =over 4
 
+=item $ref= $segment->ref
+
+Return the reference point that establishes the coordinate system for
+this segment, e.g. "chr1".
+
+=item $start = $segment->start
+
+Return the starting coordinate of this segment.
+
+=item $end = $segment->end
+
+Return the ending coordinate of this segment.
+
 =item @features = $segment->features(@filter)
 
 =item @features = $segment->features(-type=>$type,-category=>$category)
@@ -293,7 +312,7 @@ Example 1: retrieve all the features in the "similarity" and
 Example 2: retrieve all the similarity features of type EST_elegans
 and EST_GENOME:
 
-  @features = $segment->features('similarity:^EST_elegans$','similarity:^EST_GENOME$');
+  @features = $segment->features('similarity:EST_elegans','similarity:EST_GENOME');
 
 Example 3: retrieve all similarity features that have anything to do
 with ESTs:
@@ -321,18 +340,6 @@ and EST_GENOME:
   @features = $segment->features(-category=>'similarity',
                                  -type    =>/^EST_(elegans|GENOME)$/
                                  );
-
-Example 7: retrieve all features that have anything to do
-with ESTs:
-
-  @features = $segment->features(-type=>/EST/);
-
-The return value from features() is a list of
-Bio::Das::Segment::Feature objects.  See L<Bio::Das::Segment::Feature>
-for details.  Also see the section below on automatic feature merging.
-
-NOTE: Currently (March 2001) the WormBase DAS server does not allow
-you to use regular expressions in categories.
 
 =item $dna = $segment->dna
 

@@ -12,8 +12,6 @@ Das/Feature.pm
 Das/FeatureIterator.pm
 Das/HTTP/Fetch.pm
 Das/Map.pm
-Das/Parser.pm
-Das/Parser/dsn.pm
 Das/ProServer/Config.pm
 Das/ProServer/Daemon.pm
 Das/ProServer/Loader/agp.pm
@@ -46,13 +44,12 @@ Das/Request/Feature2Segments.pm
 Das/Request/Features.pm
 Das/Request/Stylesheet.pm
 Das/Request/Types.pm
-Das/Request/dsn.pm
 Das/Segment.pm
 Das/Stylesheet.pm
-Das/TestParser.pm
 Das/Type.pm
 Das/TypeHandler.pm
 Das/Util.pm
+DISCLAIMER.txt
 MANIFEST
 Makefile.PL
 eg/AGP/chrX.agp
@@ -60,11 +57,16 @@ eg/AGP/chrY.agp
 eg/agpserver
 eg/proserver
 eg/test_ssl.pl
+eg/testauth.pl
 eg/testbadpassword.pl
 eg/testdna.pl
 eg/testdsntypes.pl
 eg/testfeatures.pl
-eg/testfreeman.pl
+eg/testfeaturebyname.pl
+eg/testmultipleservers.pl
+eg/testtypes.pl
 eg/testnopassword.pl
 eg/testpassword.pl
+eg/test_map.pl
 t/01das.t
+META.yml                                 Module meta-data (added by MakeMaker)

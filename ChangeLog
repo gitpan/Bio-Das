@@ -1,3 +1,13 @@
+2004-01-12  Lincoln Stein <lstein@cshl.edu>
+	* Documented Bio::Das::Map
+	
+2004-01-02  Lincoln Stein <lstein@cshl.edu>
+	* Fixed authentication routines so that auth information isn't sent
+	in the URL.  Also fixed handling of authentication so that when one
+	server needs to be authenticated, it doesn't cancel processing of requests
+	from other servers.
+	* Cleaned up and completed documentation.
+	
 2003-12-29  Lincoln Stein <lstein@cshl.edu>
 
 	* Numerous small compatibility changes to work as a remote annotation

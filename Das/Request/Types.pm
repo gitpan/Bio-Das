@@ -1,6 +1,60 @@
 package Bio::Das::Request::Types;
-# $Id: Types.pm,v 1.5 2003/12/29 23:20:32 lstein Exp $
+# $Id: Types.pm,v 1.6 2004/01/03 00:23:40 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
+
+=head1 NAME
+
+Bio::Das::Request::Types - The DAS "types" request
+
+=head1 SYNOPSIS
+
+ my @types                = $request->results;
+ my $types                = $request->results;
+
+ my $das_command          = $request->command;
+ my $successful           = $request->is_success;
+ my $error_msg            = $request->error;
+ my ($username,$password) = $request->auth;
+
+=head1 DESCRIPTION
+
+This is a subclass of L<Bio::Das::Request> specialized for the "types"
+command.  All methods are the same as L<Bio::Das::Request> with the
+exception of results(), which has been modified to make it more useful.
+
+=over 4
+
+=item $types = $request->results
+
+In a scalar context, results() returns a hashref in which the keys are
+segment strings (in the form "ref:start,end") and the values are
+arrayrefs of L<Bio::Das::Type> objects contained within those
+segments.
+
+=item @types = $request->results
+
+In a list context, results() returns an array of L<Bio::Das::Type>
+objects.
+
+=back
+
+=head1 AUTHOR
+
+Lincoln Stein <lstein@cshl.org>.
+
+Copyright (c) 2003 Cold Spring Harbor Laboratory
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=head1 SEE ALSO
+
+L<Bio::Das::Request::Features>, L<Bio::Das::Request>,
+L<Bio::Das::HTTP::Fetch>, L<Bio::Das::Segment>, L<Bio::Das::Type>,
+L<Bio::Das::Stylesheet>, L<Bio::Das::Source>, L<Bio::RangeI>
+
+=cut
 
 use strict;
 use Bio::Das::Type;

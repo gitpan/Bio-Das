@@ -7,7 +7,7 @@ use lib '.','./blib/lib','..';
 
 use constant SERVER => 'http://www.wormbase.org/db/das';
 use constant DSN    => 'elegans';
-use constant LAST   => 16;
+use constant LAST   => 36;
 
 ######################### We start with some black magic to print on failure.
 
@@ -32,9 +32,13 @@ sub bail {
   exit 0;
 }
 
-my $db = Bio::Das->new(SERVER);
+my $db = Bio::Das->new(-server=>SERVER,
+		       -aggregators=>['Coding_transcript{CDS:curated/Sequence:curated}',
+				     'alignment',
+				    ]
+		       ,
+		      );
 test(2,$db);
-
 bail unless $db;  # can't continue
 
 # test sources
@@ -70,62 +74,73 @@ test(12,@features);
 
 # at least one of the features should be a reference
 # not working - fix
-# test(13,grep {$_->reference} @features);
+test(13,grep {$_->reference} @features);
 
 # at least one of the features should be "CHROMOSOME_III"
 my ($i) = grep {$_ eq 'III'} @features;
-test(13,$i);
+test(14,$i);
 bail unless $i;
 
 # the type of this feature should be 'Segment'
 # and its category should be 'structural'
-test(14,lc ($i->type) eq 'sequence:link');
-test(15,$i->category eq 'structural');
+test(15,lc ($i->type) eq 'sequence:link');
+test(16,$i->category eq 'structural');
 
 # see if we can't get some transcrips
-my @t = grep {  $_->type eq 'Transcript:Coding_transcript'
+my @t = grep {  $_->method eq 'Coding_transcript'
 	      } $s->features(-category=>'transcription');
-test(16,@t);
+test(17,@t);
 
-__END__
-
-# the rest of this isn't working 
-
-# see if the first one has some exons
+# see if the first one has some subseqfeatures
 my $t = $t[0] or bail;
-my @e = $t->exons or bail;
+my @e = sort {$a->start<=>$b->start} $t->get_SeqFeatures or bail;
 test(18,@e > 1);
-
-my @i = $t->introns;
-test(19,@e - @i == 1);  # exons - introns - 1
-
-# test the special "Transcript" fetch
-@t = $s->features('transcript');
-my @c = grep {   $_->type eq 'transcript' &&
-		   $_->method eq 'composite'
-		 } @t;
-test(20,@t==@c);
+test(19,$t->compound);
 
 # are the start and end correct?
-test(21,$e[0]->start == $t->start);
-test(22,$e[-1]->stop == $t->stop);
+test(20,$e[0]->start == $t->start);
+test(21,$e[-1]->stop == $t->stop);
 
 # is there a link, and are they the same?
-test(23,$t->link eq $e[0]->link);
+test(22,$t->link eq $e[0]->link);
 
 # test similarity features
-my @s = $s->features(-type=>'EST');
-test(24,@s);
+my @s = $s->features(-type=>'alignment:BLAT_EST_BEST'); # BLAT_EST_BEST
+test(23,@s);
 @s or bail;
 
-test(25,$s[0]->can('segments'));
-my @seg = $s[0]->merged_segments or bail;
-test(26,@seg);
-test(27,$s[0]->type eq $seg[0]->type);
+test(24,$s[0]->can('segments'));
+my @seg = $s[0]->segments or bail;
+test(25,@seg);
+
+test(26,$s[0]->source eq $seg[0]->source);
 @t   = $seg[0]->target;
-test(28,@t==3);
-test(29,$t[0] eq $s[0]->target);
+test(27,@t==3);
+test(28,$t[0] eq $s[0]->target);
 
 # test that stylesheets work
 my ($glyph,@args) = $ss->glyph($s[0]);
-test(30,$glyph);
+test(29,$glyph);
+
+# test parallel interface
+$db = Bio::Das->new(5);
+test(30,$db) or bail;
+
+my $response = $db->features(-dsn     => 'http://www.wormbase.org/db/das/elegans',
+			     -segment => ['I:1,10000',
+					  'I:10000,20000'
+					 ]
+			     );
+
+test(31,$response) or bail;
+test(32,$response->is_success);
+my $results = $response->results;
+test(33,$results);
+my @segments = keys %$results;
+test(34,@segments == 2);
+test(35,$segments[0] =~ /^I:/);
+my $features = $results->{$segments[0]};
+test(36,@$features>0);
+
+
+

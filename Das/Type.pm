@@ -52,6 +52,18 @@ sub reference {
   $self->{reference} = shift if @_;
   $d;
 }
+sub has_subparts {
+  my $self = shift;
+  my $d = $self->{has_subparts};
+  $self->{has_subparts} = shift if @_;
+  $d;
+}
+sub has_superparts {
+  my $self = shift;
+  my $d = $self->{has_superparts};
+  $self->{has_superparts} = shift if @_;
+  $d;
+}
 sub source {
   my $self = shift;
   my $d = $self->{source};

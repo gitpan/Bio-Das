@@ -128,11 +128,11 @@ sub _add_swissprot_reference {
   } elsif($tag eq "RX") {
     my ($pubmed) = $line =~ /pubmed=([0-9]+)/i;
     return unless($pubmed);
-    $self->{'_current_reference'}->{'link'}    = qq(http://www.ncbi.nlm.nih.gov/entrez/utils/qmap.cgi?uid=$pubmed&form=6&db=m&Dopt=r);
-    $self->{'_current_reference'}->{'linktxt'} = $pubmed;
+    $self->{'_current_reference'}->{'note'}   .= qq( pubmed:http://www.ncbi.nlm.nih.gov/entrez/utils/qmap.cgi?uid=$pubmed&form=6&db=m&Dopt=r );
+#    $self->{'_current_reference'}->{'linktxt'} = $pubmed;
 
   } elsif($tag eq "RA" || $tag eq "RT" || $tag eq "RL") {
-    $self->{'_current_reference'}->{'note'} .= $line;
+    $self->{'_current_reference'}->{'note'} .= "$line ";
   }
 }
 
