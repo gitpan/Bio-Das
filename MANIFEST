@@ -1,0 +1,15 @@
+Changes
+Das.pm
+Das/Parser.pm
+Das/Segment.pm
+Das/Segment/Feature.pm
+Das/Segment/GappedAlignment.pm
+Das/Segment/Transcript.pm
+Das/Source.pm
+Das/Stylesheet.pm
+Das/Type.pm
+Das/Util.pm
+MANIFEST
+Makefile.PL
+README
+t/01das.t
