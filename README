@@ -22,8 +22,9 @@ must install the GD module.  The file "testgraphics.pl" in the
 Bio::Das distribution directory can be used to draw pictures from the
 WormBase DAS server.
 
-Address questions to the DAS mailing list.  To subscribe, send the
-message "subscribe das" to majordomo@ebi.ac.uk.
+Address questions to the DAS mailing list.  To subscribe, visit this
+URL: 
+	http://biodas.org/mailman/listinfo/das
 
 Lincoln Stein
 lstein@cshl.org

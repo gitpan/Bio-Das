@@ -29,7 +29,7 @@ sub new {
   my $class = shift;
   $class = ref($class) if ref($class);
 
-  my ($source,$refseq,$start,$stop) = @_;
+  my ($source,$refseq,$start,$stop,$size,$subparts) = @_;
   $source && $source->isa('Bio::Das') 
     || croak 'Usage: Bio::Das::Segment->new($das,$refseq,$start,$stop)';
 
@@ -37,7 +37,9 @@ sub new {
 		refseq  => $refseq,
 		source  => $source,
 		start   => $start,
-		stop     => $stop,
+		stop    => $stop,
+		size    => $size,
+		subparts=> $subparts,
 	       },$class;
 }
 
@@ -109,6 +111,20 @@ sub start {
   my $self = shift;
   my $d = $self->{start};
   $self->{start} = shift if @_;
+  $d;
+}
+
+sub size {
+  my $self = shift;
+  my $d = $self->{size};
+  $self->{size} = shift if @_;
+  $d;
+}
+
+sub subparts {
+  my $self = shift;
+  my $d = $self->{subparts};
+  $self->{subparts} = shift if @_;
   $d;
 }
 
@@ -310,6 +326,7 @@ sub do_feature_start {
     $cft->id($attr{id});
     $cft->category($attr{category});
     $cft->reference(1) if defined $attr{reference} && $attr{reference} eq 'yes';
+    $cf->subparts($attr{subparts});
     $self->{fd} = '';  # fd = "feature data"
     $expat->setHandlers(Char => sub { $self->do_feature_contents(@_) } );
     return;
@@ -494,7 +511,7 @@ sub do_entry_point {
   my $self = shift;
   my ($expat,$element,%attr) = @_;
   return unless $element eq 'SEGMENT';
-  my $segment = ref($self)->new($self->source,$attr{id},$attr{start},$attr{stop});
+  my $segment = ref($self)->new($self->source,$attr{id},$attr{start},$attr{stop},$attr{size},$attr{subparts});
   push @{$self->{entry_points}},$segment;
 }
 

@@ -18,7 +18,7 @@ use constant FORCE_GET=> 0;
 
 use vars qw($VERSION @ISA %VALID_TYPE);
 @ISA       = qw();
-$VERSION = '0.18';
+$VERSION = '0.20';
 
 *source = \&dsn;
 
