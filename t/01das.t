@@ -33,7 +33,7 @@ sub bail {
 }
 
 my $db = Bio::Das->new(-server=>SERVER,
-		       -aggregators=>['Coding_transcript{CDS:curated/Sequence:curated}',
+		       -aggregators=>['Coding_transcript{coding_exon/CDS}',
 				     'alignment',
 				    ]
 		       ,

@@ -28,8 +28,8 @@ use DBI;
 sub dbh {
   my $self     = shift;
   my $dbname   = $self->config->{'dbname'};
-  my $username = $self->config->{'username'} || "test";
-  my $password = $self->config->{'password'} || "";
+  my $username = $self->config->{'username'};
+  my $password = $self->config->{'password'};
   my $driver   = $self->config->{'driver'}   || "Oracle";
   my $dsn      = qq(DBI:$driver:);
   my $userstring = $username . "\@" . $dbname;

@@ -15,13 +15,19 @@ disclaimers of warranty.
 =cut
 
 use strict;
+use Sys::Hostname;
 use HTTP::Daemon;
 use HTTP::Status;
 use HTTP::Response;
 use Data::Dumper;
+use POSIX qw(:signal_h);
 use Compress::Zlib;
+use Digest::MD5;
 use CGI;
 use Bio::Das::ProServer::Config;
+$| = 1;
+
+use vars qw/%CHILDREN $CHILDREN $DEBUG/;
 
 sub new {
   my ($class, $config) = @_;
@@ -45,44 +51,112 @@ sub handle {
   my $config  = $self->config();
   my $host    = $config->host();
   my $port    = $config->port();
-  my $d       = HTTP::Daemon->new(
-#				  ReusePort => 1,
-				  ReuseAddr => 1,
-				  LocalAddr => $host,
-				  LocalPort => $port,
-				 ) or die "Cannot start daemon: $!\n";
-
-  $self->log("Please contact me at this URL: " . $d->url . "das/dsn/{command}");
+  my $prefork = $config->prefork();
   
-  $SIG{'CHLD'} = 'IGNORE'; # Reap our forked processes immediately
+  my $HOSTNAME = &hostname();
+  my $PIDFILE  = "$0.$HOSTNAME.pid";
+  my $VERSION  = "v1.1";
+  my $DEBUG    = 1;
   
-  while (my $c = $d->accept()) {
-    
-    #########
-    # fork to handle request
-    #
-    my $pid;
-    if ($pid = fork) {
-      #########
-      # I am the parent
-      #
-      next;
-
-    } elsif (defined $pid) {
-      #########
-      # I am the child
-      #
-      $self->log("Child process $$ born...");
-
-    } else {
-      die "Nasty forking error: $!\n";
+  $self->log("Proserver $VERSION startup...");
+  # establish SERVER socket, bind and listen.
+  my $server       = HTTP::Daemon->new(
+				       ReuseAddr => 1,
+				       LocalAddr => $host,
+				       LocalPort => $port,
+				      ) or die "Cannot start daemon: $!\n";
+  
+  $self->socket_server($server);
+  my $url = $server->url();
+  
+  # Fork off  children.
+  for (1 .. $prefork) {
+    $self->make_new_child();
+  }
+  $self->log("Started $prefork child servers");
+  
+  my $pid = $self->make_pid_file($PIDFILE);
+  $self->log("Wrote parent PID to $PIDFILE [PID: $pid]");
+  
+  $self->log("Please contact this server at this URL: $url");
+  
+  # Install signal handlers.
+  $SIG{CHLD}  = \&REAPER;
+  $SIG{INT}   = \&HUNTSMAN;
+  $SIG{USR1}  = \&RESTART;
+  $SIG{HUP}   = \&RESTART;
+  
+  # And maintain the population.
+  while (1) {
+    sleep;                          # wait for a signal (i.e., child's death)
+    for (my $i = $CHILDREN; $i < $prefork; $i++) {
+      $self->make_new_child();           # top up the child pool
     }
+  }
+}
 
-    #########
-    # child code - handle the request
-    #
-    while (my $req = $c->get_request()) {
-      
+###########################################################################################  
+sub RESTART {
+  PURGE_CHILDREN();	# kill all our child processes (without exiting ourself)
+  print STDERR "Received USR1/HUP signal: ProServer restarting...\n";
+
+  my ($exe) = $0 =~ /([a-zA-Z0-9\/\._]+)/;
+
+  my @detaintargs = ();
+  for my $a (@ARGV) {
+      my ($d) = $a =~ /([a-zA-Z0-9\/\._\-]+)/;
+      push @detaintargs, $d;
+  }
+
+  print STDERR qq(Restarting $exe @detaintargs\n);
+  exec $exe, @detaintargs;	  # replace ourself with a new copy
+}
+
+###########################################################################################  
+sub make_new_child {
+
+  my $self    = shift;
+  my $config  = $self->config();
+  my $server  = $self->socket_server();
+  my $pid;
+  my $sigset  = POSIX::SigSet->new(&POSIX::SIGINT);
+  $sigset->addset(&POSIX::SIGHUP);
+  
+  my $sigset2 = POSIX::SigSet->new(&POSIX::SIGHUP);
+  
+  # block 'INT' signal during fork
+  sigprocmask(SIG_BLOCK, $sigset) or die "Can't block SIGINT for fork: $!\n";
+  die "fork: $!" unless defined ($pid = fork);
+  
+  if ($pid) {
+    ###########################################################################################
+    # Parent process code executes from here
+    # Parent records the child's birth and returns.
+    ###########################################################################################
+    sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock SIGINT for fork: $!\n";
+    $CHILDREN{$pid} = 1;
+    $CHILDREN++;
+    $self->log("Child born: $pid (Total children: $CHILDREN)\n") if $DEBUG;
+    return;
+  } else {
+    ###########################################################################################
+    # Child process code executes from here
+    ###########################################################################################
+    
+    $SIG{INT}  = 'DEFAULT';
+    $SIG{HUP}  = sub { $self->log("Received SIGHUP, child $$ resigning\n"); exit; };
+    sigprocmask(SIG_UNBLOCK, $sigset) or die "Can't unblock SIGINT for fork: $!\n";
+    
+    for (my $i=0; $i < $config->maxclients(); $i++) {
+      my $c   = $server->accept();
+      my $req = $c->get_request();
+
+      unless($req) {
+	print STDERR qq(Daemon: Error! Accepted connection but could not build request object.\n);
+	print STDERR qq(another get_req returns: ), $c->get_request(), "\n";
+	next;
+      }
+
       my $url = $req->uri();
       my $cgi;
       
@@ -104,12 +178,15 @@ sub handle {
       my $dsn    = $1 || "";
       my $method = $2 || "";
       $method    =~ s/^(.*?)\//$1/;
-
+      
       if ($req->header('Accept-Encoding') && ($req->header('Accept-Encoding') =~ /gzip/) ) {
 	$self->use_gzip(1);
 	$self->log("  compressing content [client understands gzip content]");
       }
       
+      #########
+      # recognised request type
+      #
       if ($req->method() eq 'GET' || $req->method() eq 'POST') {
 	my $res     = HTTP::Response->new();
 	my $content = "";
@@ -120,36 +197,32 @@ sub handle {
 	if($path ne "/das/dsn" && !$config->knows($dsn)) {
 	  $c->send_error("401", "Bad data source");
 	  $c->close();
-	  $self->log("Child process $$ exit [Bad data source]");
-	  exit; # VERY IMPORTANT - reap the child process!
+	  $self->log("401 [Bad data source]");
+	  next;
 	}
 	
 	if  ($path eq "/das/dsn") {
 	  $content .= $self->do_dsn_request($res);
-
+	  
 	} elsif ($config->adaptor($dsn)->implements($method)) {
-
+	  
 	  if($method eq "features") {
 	    $content .= $self->do_feature_request($res, $dsn, $cgi);
-
 	  } elsif ($method eq "stylesheet") {
 	    $content .= $self->do_stylesheet_request($res, $dsn);
-
 	  } elsif($method eq "dna") {
 	    $content .= $self->do_dna_request($res, $dsn, $cgi);
-
 	  } elsif($method eq "entry_points") {
 	    $content .= $self->do_entry_points_request($res, $dsn, $cgi);
-
 	  } elsif($method eq "types") {
 	    $content .= $self->do_types_request($res, $dsn, $cgi);
 	  }
-
+	  
 	} else {
 	  $c->send_error("501", "Unimplemented feature");
 	  $c->close();
-	  $self->log("Child process $$ exit [Unimplemented feature]");
-	  exit; # VERY IMPORTANT - reap the child process!
+	  $self->log("501 [Unimplemented feature]");
+	  next;
 	}
 	
 	if( ($self->use_gzip() == 1) && (length($content) > 10000) ) {
@@ -162,21 +235,22 @@ sub handle {
 	$res->content($content);
 	$c->send_response($res);
 	
+	#########
+	# unrecognised request type
+	#
       } else {
 	$c->send_error(RC_FORBIDDEN);
       }
       
       $c->close();
-      $self->log("Child process $$ normal exit.");
-      exit; # VERY IMPORTANT - reap the child process!
     }
     
-    $c->close();
-    undef($c);
+    print STDERR  "Child $$: reached max client count - exiting.\n";
+    exit; ## very, very important exit!
   }
 }
 
-#########
+########################################################################################
 # DAS method: entry_points
 #
 sub do_entry_points_request {
@@ -333,6 +407,17 @@ sub adaptor {
 }
 
 #########
+# return an appropriate adaptor object given a DSN
+#
+sub socket_server {
+  my ($self, $s) = @_;
+  if ($s) {
+    $self->{'_socket_server'} = $s;
+  }
+  return ($self->{'_socket_server'});
+}
+
+#########
 # debug log
 #
 sub log {
@@ -342,4 +427,51 @@ sub log {
   }
 }
 
+###########################################################
+# create a PID file so we can be sent a TERM/INT signal
+#
+sub make_pid_file {
+  my ($self, $pidfile) = @_;
+  my $hostname  = &hostname();
+
+  ($pidfile) = $pidfile =~ /([a-zA-Z0-9\.\/\_]+)/;
+  open (PID, ">$pidfile") or die "Cannot create pid file: $!\n";
+  print PID "$$\n";
+  close(PID);
+  #$self->log("[Parent pid on $hostname: $$]");
+  return($$);
+}
+
+###########################################################
+sub REAPER {                        	# takes care of dead children
+  my $sigset  = POSIX::SigSet->new(&POSIX::SIGCHLD);
+  sigprocmask(SIG_BLOCK, $sigset) or die "Can't block SIGCHLD for reaper: $!\n";
+  my $pid = wait;
+  if (delete $CHILDREN{$pid}){
+    $CHILDREN--;
+  } else {
+    #warn("Attempted to delete a non-child PID: $pid!\n") if $DEBUG;
+    #warn("Child PIDs are:\n", join("\n",keys %CHILDREN), "\n") if $DEBUG;
+  }
+  sigprocmask(SIG_UNBLOCK, $sigset);
+  print STDERR "Got SIGCHLD from: $pid\n";
+  $SIG{CHLD} = \&REAPER;
+}
+
+###########################################################
+sub HUNTSMAN {                      	# signal handler for SIGINT
+  local($SIG{CHLD}) = 'IGNORE';   	# we're going to kill our children
+  print STDERR "Killing children...\n";
+  kill 'INT' => keys %CHILDREN;
+  exit;                           	# clean up with dignity
+}
+
+###########################################################
+sub PURGE_CHILDREN {                      	# signal handler for SIGINT
+  local($SIG{CHLD}) = 'IGNORE';   	# we're going to kill our children
+  print STDERR "Killing children...\n";
+  kill 'INT' => keys %CHILDREN;
+}
+
+###########################################################
 1;

@@ -28,91 +28,43 @@ use strict;
 use Bio::Das::ProServer::SourceAdaptor;
 use Bio::Das::ProServer::SourceHydra;
 use Sys::Hostname;
+use Config::IniFiles;
 
 sub new {
-  my $class = shift;
-  my $self = {
-	      'hostname' => &Sys::Hostname::hostname(),
-	      'port'     => '9000',
-	      'adaptors' => {
-			     'mysimple'     => {
-						'adaptor'       => 'simple',
-						'state'         => 'off',
-						'transport'     => 'file',
-						'filename'      => '/path/to/genelist.txt',
-						'baseurl'       => 'http://www.example.org/datascript?id=',
-						'type'          => 'gene',
-						'feature_query' => 'field0 lceq "%s"',
-						'unique'        => 1, # optional
-					       },
-			     'gensat'     => {
-						'adaptor'       => 'gensat',
-						'state'         => 'off',
-						'transport'     => 'file',
-						'filename'      => '/path/to/textfile',
-						'type'          => 'gene',
-						'feature_query' => 'field0 lceq "%s"',
-						'unique'        => 1, # optional
-					       },
-			     'swissprot'    => {
-						'adaptor'       => 'swissprot',
-						'state'         => 'off',
-						'transport'     => 'getzc',
-						'host'          => 'getzserver.example.com',
-						'port'          => 20204,
-					       },
-			     'image'       => {
-						'adaptor'       => 'image',
-						'state'         => 'off',
-						'transport'     => 'dbi',
-						'host'          => 'db.example.com',
-						'port'          => '3306',
-						'username'      => 'mydbuser',
-						'dbname'        => 'mydbname',
-						'password'      => 'mydbpassword',
-					       },
+  my ($class, $inifile) = @_;
+  my $self   = {
+		'hostname'   => &Sys::Hostname::hostname(),
+		'prefork'    => '5',
+		'maxclients' => '10',
+		'port'       => '9000',
+		'adaptors' => {},
+	       };
+  ($inifile) = $inifile =~ /([a-zA-Z0-9_\/\.]+)/;
 
-			     'interpro'     => {
-						'adaptor'       => 'interpro',
-						'state'         => 'off',
-						'transport'     => 'getz',
-						'getz'          => '/usr/local/bin/getz',
-					       },
-			     'ncbi33'       => {
-						'adaptor'       => 'agp',
-						'state'         => 'off',
-						'transport'     => 'dbi',
-						'host'          => 'localhost',
-						'port'          => '3306',
-						'username'      => 'mydbuser',
-						'dbname'        => 'mydbname',
-						'password'      => 'mydbpass',
-						'tablename'     => 'tmp_agp_ncbi33',
-					       },
-    			     'myembl'       => {
-					        'state'         => 'off',
-					        'adaptor'       => 'bioseq',
-					        'transport'     => 'bioseqio',
-					        'filename'      => '/path/to/data/ECAPAH02.embl',
-					        'format'        => 'embl',
-					        'index'         => 'bdb',           # optional (Bio::DB::Flat)
-					        'dbname'        => 'an_embl_db',    # optional (Bio::DB::Flat)
-					        'dbroot'        => '/tmp'           # optional (Bio::DB::Flat)
-					       },
-			     'hydra001'     => {
-						'state'         => 'off',
-						'adaptor'       => 'simpledb',           # SourceAdaptor to clone
-						'hydra'         => 'dbi',                # Hydra implementation to use
-						'transport'     => 'dbi',                # transport for sourceadaptor (and probably hydra)
-						'basename'      => 'hydra',              # dbi: basename for db tables containing servable data
-						'dbname'        => 'proserver_hydra',    # dbi: database name
-						'host'          => 'dbhost.example.com', # dbi: database host
-						'username'      => 'dbuser',             # dbi: database username
-						'password'      => 'dbpass',             # dbi: database password
-					       },
-			    },
-	     };
-  
+  if($inifile && -f $inifile) {
+      my $conf = Config::IniFiles->new(
+				       -file => $inifile,
+				       );
+      #########
+      # load general parameters
+      #
+      for my $f (qw(hostname prefork maxclients port ensemblhome oraclehome bioperlhome http_proxy)) {
+	  $self->{$f} = $conf->val("general", $f) if($conf->val("general", $f));
+      }
+
+      #########
+      # build the adaptors substructure
+      #
+      for my $s ($conf->Sections()) {
+	next if ($s eq "general");
+	print STDERR qq(Configuring Adaptor $s );
+	for my $p ($conf->Parameters($s)) {
+	  $self->{'adaptors'}->{$s}->{$p} = $conf->val($s, $p);
+	  print STDERR $self->{'adaptors'}->{$s}->{$p}, "\n" if($p eq "state");
+	}
+      }
+  }
+
   bless $self,$class;
   return $self;
 }
@@ -121,6 +73,18 @@ sub port {
   my $self = shift;
   ($self->{'port'}) = $self->{'port'} =~ /([0-9]+)/;
   return $self->{'port'};
+}
+
+sub prefork {
+  my $self = shift;
+  ($self->{'prefork'}) = $self->{'prefork'} =~ /([0-9]+)/;
+  return $self->{'prefork'};
+}
+
+sub maxclients {
+  my $self = shift;
+  ($self->{'maxclients'}) = $self->{'maxclients'} =~ /([0-9]+)/;
+  return $self->{'maxclients'};
 }
 
 sub host {
@@ -256,11 +220,11 @@ sub hydra_adaptor {
 sub _hydra_adaptor {
   my ($self, $hydraname, $dsn) = @_;
 
-  next unless($self->{'adaptors'}->{$hydraname}->{'state'} eq "on");
+  return unless($self->{'adaptors'}->{$hydraname}->{'state'} eq "on");
   my $config = $self->{'adaptors'}->{$hydraname};
   my $hydra  = $self->hydra($hydraname);
   
-  next unless( grep { $_ eq $dsn } $hydra->sources());
+  return unless( grep { $_ eq $dsn } $hydra->sources());
   
   my $adaptortype = "Bio::Das::ProServer::SourceAdaptor::".$self->{'adaptors'}->{$hydraname}->{'adaptor'};
   eval "require $adaptortype";
@@ -291,6 +255,7 @@ sub hydra {
   unless($self->{'adaptors'}->{$hydraname}->{'_hydra'}) {
     my $hydraimpl = "Bio::Das::ProServer::SourceHydra::".$self->{'adaptors'}->{$hydraname}->{'hydra'};
     eval "require $hydraimpl";
+    print STDERR qq(Loaded $hydraimpl\n);
     if($@) {
       warn $@;
       return;

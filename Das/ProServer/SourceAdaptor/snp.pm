@@ -57,12 +57,35 @@ sub init{
   $self->{'linktxt'} = "more information";
 }
 
+#######
+# gets rid of chromosome coordinates if multiple segments are present
+#
+#sub init_segments{
+#  my ($self,$segments) = @_;
+#  if (scalar @$segments > 1 && (grep {$_ =~ /^AL\d{6}/i} @$segments)){
+#    @$segments = grep {$_ !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])/i} @$segments;
+#  }
+#}
+
 sub length{
   my ($self,$seg) = @_;
   if ($seg !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
-    #get contig coordinates
+    if ($seg !~/^\w+\.\w+\.\w+\.\w+$/i){
+      #get contig coordinates
+      if (!$self->{'_length'}->{$seg}){
+	my $databases = &EnsEMBL::DB::Core::get_databases('core');
+	my $ca = $databases->{'core'}->get_CloneAdaptor();
+	my $clone = $ca->fetch_by_name($seg);
+	my $contigs = $clone->get_all_Contigs();
+	if(@$contigs == 1){
+	  $self->{'_length'}->{$seg} = $contigs->[0]->length();
+	}
+      }
+      return $self->{'_length'}->{$seg};
+    }
     return;
   }
+  #get chromosome coordinates
   if (!$self->{'_length'}->{$seg}){
     my $databases = &EnsEMBL::DB::Core::get_databases('core');
     my $ca = $databases->{'core'}->get_ChromosomeAdaptor();
@@ -125,38 +148,73 @@ sub das_stylesheet{
 
 sub build_features{
   my ($self,$opts) = @_;
-  my $segid  = $opts->{'segment'};
-  my $start = $opts->{'start'};
-  my $end   = $opts->{'end'};
-  my @features = ();
-  if (!$end){
+  my $segid       = $opts->{'segment'};
+  my $start       = $opts->{'start'};
+  my $end         = $opts->{'end'};
+  my $restriction = "";
+  my $query       = "";
+  my @features    = ();
+
+  if (defined $start && !$end){
     return @features;
   }
 
-my $query = qq(SELECT distinct
-       (mapped_snp.position + seq_seq_map.START_COORDINATE -1) as snppos,
-       mapped_snp.id_snp as snp_id,
-       snp_name.snp_name as snp_name,
-       snp.is_confirmed as status
-FROM chrom_seq,
-     seq_seq_map,
-     snp_sequence,
-     mapped_snp,
-     snp_name,
-     snp,
-     database_dict
-WHERE chrom_seq.DATABASE_SEQNAME='$segid'
-AND chrom_seq.ID_CHROMSEQ = seq_seq_map.ID_CHROMSEQ
-AND snp_sequence.ID_SEQUENCE = seq_seq_map.SUB_SEQUENCE
-AND mapped_snp.ID_SEQUENCE = snp_sequence.ID_SEQUENCE
-AND snp_name.id_snp = mapped_snp.id_snp
-AND snp.id_snp = snp_name.id_snp
-AND snp_name.snp_name_type = 1
-AND chrom_seq.DATABASE_SOURCE = database_dict.ID_DICT
-AND database_dict.DATABASE_NAME = 'NCBI'
-AND database_dict.DATABASE_VERSION = '33'
-AND (mapped_snp.position + seq_seq_map.START_COORDINATE -1) BETWEEN '$start' AND '$end'
+  if (defined $start && defined $end){
+    $restriction = qq(AND     ms.POSITION
+                      BETWEEN	($start - ssm.START_COORDINATE - 99)
+	              AND	($end - ssm.START_COORDINATE + 1));
+
+  }
+
+  if ($segid =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
+    #get chromosome coordinates
+    $query = qq(SELECT 	distinct
+	(ms.position + ssm.START_COORDINATE -1) as snppos,
+	ms.id_snp as snp_id,
+	ss.default_name as snp_name,
+	ss.confirmation_status as status
+FROM 	chrom_seq cs,
+	seq_seq_map ssm,
+	mapped_snp ms,
+	snp_summary ss
+WHERE 	cs.DATABASE_SEQNAME='$segid'
+AND     cs.is_current = 1
+AND 	cs.ID_CHROMSEQ = ssm.ID_CHROMSEQ
+AND 	ms.ID_SEQUENCE = ssm.SUB_SEQUENCE
+AND	ss.id_snp = ms.id_snp
+
+$restriction
 ORDER BY SNPPOS);
+
+  }
+#  elsif ($segid !~ /^\w+\.\w+\.\w+\.\w+$/i){
+#    #get contig coordinates
+#    $query = qq(select distinct snp_name.snp_name as SNP_NAME,
+#		(1 +(clone_seq_map.CONTIG_ORIENTATION * (mapped_snp.position -
+#		clone_seq_map.START_COORDINATE))) as SNPPOS,
+#		snp.is_confirmed as STATUS,
+#		mapped_snp.id_snp as SNP_ID
+#		from snp_name,
+#		mapped_snp,
+#		clone_seq_map,
+#		snp,
+#		clone_seq
+#		where (mapped_snp.position between  clone_seq_map.START_COORDINATE and
+#		clone_seq_map.END_COORDINATE
+#		or mapped_snp.position between clone_seq_map.END_COORDINATE and
+#		clone_seq_map.START_COORDINATE)
+#		and  mapped_snp.id_sequence =  clone_seq_map.id_sequence
+#		and clone_seq.DATABASE_SEQNAME = '$segid'
+#		and clone_seq_map.ID_CLONESEQ = clone_seq.ID_CLONESEQ
+#		and mapped_snp.id_sequence =  clone_seq_map.id_sequence
+#		and mapped_snp.id_snp = snp.id_snp
+#		and snp.id_snp = snp_name.id_snp
+#		and snp_name.snp_name_type=1
+#		order by SNPPOS);
+#  }
+  else{
+    return @features;
+  }
 
  my $snp = $self->transport->query($query);
 
@@ -180,6 +238,7 @@ for my $snp (@$snp){
 		   'method'  => "snp",
 		   'start'   => $snp->{'SNPPOS'},
 		   'end'     => $snp->{'SNPPOS'},
+		   'ori'     => "0",
 		   'link'    => $link,
 		   'linktxt' => $self->{'linktxt'},
 		   'typecategory' => "snp",

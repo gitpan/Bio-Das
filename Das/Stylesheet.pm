@@ -29,6 +29,8 @@ sub categories {
 # in a scalar context, return name of glyph
 # in array context, return name of glyph followed by attribute/value pairs
 sub glyph {
+  local $^W = 0;
+
   my $self    = shift;
   my $feature = shift;
   my $length  = shift || 0;
@@ -51,8 +53,11 @@ sub glyph {
 
   # my $cat    = $self->{categories}{$category} || $self->{categories}{default};
   # my $zoom   = $cat->{$type}                  || $cat->{default} || {};
-  my $zoom   = $self->{categories}{$category}{$type};
+  (my $base = $type) =~ s/:.+$//;
+  my $zoom   =  $self->{categories}{$category}{$type};
+  $zoom     ||= $self->{categories}{$category}{$base};
   $zoom    ||= $self->{categories}{'default'}{$type};
+  $zoom    ||= $self->{categories}{'default'}{$base};
   $zoom    ||= $self->{categories}{'default'}{'default'};
 
   my $glyph;
@@ -93,10 +98,10 @@ sub add_type {
   my $self     = shift;
   my ($category,$type,$zoom,$glyph_name,$attributes) = @_;
   $zoom ||= 0;
-  $self->{categories}{$category}{$type}{$zoom} = { name => $glyph_name,  # a string
-						   attr => $attributes,  # a hashref
+  $self->{categories}{lc $category}{lc $type}{lc $zoom} = { name => $glyph_name,  # a string
+							    attr => $attributes,  # a hashref
 						 };
-  $self->{categories}{'default'}{$type}{$zoom} = $self->{categories}{$category}{$type}{$zoom};
+  $self->{categories}{'default'}{lc $type}{lc $zoom} = $self->{categories}{lc $category}{lc $type}{lc $zoom};
 }
 
 sub lowzoom {

@@ -24,7 +24,8 @@ sub method {
   my $d = $self->{method};
   if (@_) {
     $self->{method} = $_[0];
-    $self->{id}    =~ s/^[^:]+/$_[0]/;  # hack to allow to work with Bio::DB::GFF aggregators
+    # hack to allow to work with Bio::DB::GFF aggregators
+    $self->{id}    =~ s/^[^:]+/$_[0]/ if $_[0]
   }
   $d;
 }
@@ -94,8 +95,9 @@ sub complete {
 # type and method
 sub _key {
   my $self = shift;
-  my @k = @{$self}{qw(id method)};
-  push @k,$self->{reference} if exists $self->{reference};
+  my @k = $self->{id};
+  push @k,$self->{method}    if defined $self->{method};
+  push @k,$self->{reference} if defined $self->{reference};
   join ':',@k;
 }
 

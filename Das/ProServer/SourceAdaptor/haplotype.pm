@@ -134,41 +134,38 @@ sub build_features{
     return @features;
   }
 
- my  $query = qq(SELECT 	distinct (mapped_snp.position + seq_seq_map.START_COORDINATE -1) as snppos,
-	mapped_snp.id_snp as snp_id,
-	sb.id_block as block,
-	b.name as block_name,
-	b.id_block_set as block_set,
-	p.description as population,
-	snp_name.snp_name as snp_name,
-	bs.maf as maf
-FROM 	chrom_seq,
-	seq_seq_map,
-	snp_sequence,
-	mapped_snp,
-	snp_name,
-	snp,
-	snp_block sb,
-	block b,
-	block_set bs,
-	population p,
-	database_dict
-WHERE	chrom_seq.DATABASE_SEQNAME='$segid'
-AND 	chrom_seq.ID_CHROMSEQ = seq_seq_map.ID_CHROMSEQ
-AND 	snp_sequence.ID_SEQUENCE = seq_seq_map.SUB_SEQUENCE
-AND 	mapped_snp.ID_SEQUENCE = snp_sequence.ID_SEQUENCE
-AND 	snp_name.id_snp = mapped_snp.id_snp
-AND 	snp.id_snp = snp_name.id_snp
-AND	snp.id_snp = sb.id_snp
-AND	sb.id_block = b.id_block
-AND	b.id_block_set = bs.id_block_set
-AND	bs.id_pop = p.id_pop	
-AND 	snp_name.snp_name_type = 1
-AND 	chrom_seq.DATABASE_SOURCE = database_dict.ID_DICT
-AND 	database_dict.DATABASE_NAME = 'NCBI'
-AND 	database_dict.DATABASE_VERSION = '33'
-AND 	(mapped_snp.position + seq_seq_map.START_COORDINATE -1) BETWEEN '$start' AND '$end'
-ORDER BY snppos);
+ my  $query = qq(SELECT         distinct (ms.position + ssm.START_COORDINATE -1)
+    as snppos,
+           ms.id_snp as snp_id,
+           sb.id_block as block,
+            b.name as block_name,
+            b.id_block_set as block_set,
+            p.description as population,
+            bs.maf as maf
+   FROM    chrom_seq cs,
+           seq_seq_map ssm,
+           mapped_snp ms,
+           snp_summary ssum,
+           snp_block sb,
+           block b,
+           block_set bs,
+           population p
+   WHERE   cs.DATABASE_SEQNAME='$segid'
+   AND     cs.is_current = 1
+   AND     cs.ID_CHROMSEQ = ssm.ID_CHROMSEQ
+   AND     ms.id_sequence = ssm.sub_sequence
+   AND     ssum.id_snp = ms.id_snp
+   AND     ssum.id_snp = sb.id_snp
+   AND     sb.id_block = b.id_block
+   AND     b.id_block_set = bs.id_block_set
+   AND     bs.id_pop = p.id_pop
+   AND     ms.position 
+           BETWEEN
+           ($start - ssm.START_COORDINATE - 99) 
+           AND 
+           ($end - ssm.start_coordinate + 1)
+   ORDER BY snppos);
+
 
 my $haplotype = $self->transport->query($query);
 

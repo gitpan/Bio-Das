@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.11 2004/01/02 01:40:46 lstein Exp $
+# $Id: Features.pm,v 1.12 2004/02/21 22:27:57 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -126,6 +126,15 @@ sub t_FEATURE {
   else {
     # feature is ending. This would be the place to do group aggregation
     my $feature = $self->{tmp}{current_feature};
+    my $cft = $feature->type;
+
+    if (!$cft->complete) {
+      # fix up broken das servers that don't set a method
+      # the id and method will be set to the same value
+      $cft->id($cft->method) if $cft->method;
+      $cft->method($cft->id) if $cft->id;
+    }
+
     if (my $callback = $self->callback) {
       $callback->($feature);
     } else {
@@ -144,8 +153,8 @@ sub t_TYPE {
   if ($attrs) {  # tag starts
     $cft->id($attrs->{id});
     $cft->category($attrs->{category})   if $attrs->{category};
-    $cft->reference(1)    if $attrs->{reference} && $attrs->{reference} eq 'yes';
-    $cft->has_subparts(1) if $attrs->{subparts} && $attrs->{subparts} eq 'yes';
+    $cft->reference(1)      if $attrs->{reference} && $attrs->{reference} eq 'yes';
+    $cft->has_subparts(1)   if $attrs->{subparts} && $attrs->{subparts} eq 'yes';
     $cft->has_superparts(1) if $attrs->{superparts} && $attrs->{superparts} eq 'yes';
   } else {
 
@@ -154,10 +163,8 @@ sub t_TYPE {
       $cft->label($label);
     }
 
-    if ($cft->complete) {
-      my $type = $self->_cache_types($cft);
-      $feature->type($type);
-    }
+    my $type = $self->_cache_types($cft);
+    $feature->type($type);
   }
 }
 
@@ -247,7 +254,7 @@ sub t_NOTE {
   my $self = shift;
   my $attrs = shift;
   my $feature = $self->{tmp}{current_feature} or return;
-  $feature->note($self->char_data) unless $attrs;
+  $feature->add_note($self->char_data) unless $attrs;
 }
 
 sub t_TARGET {

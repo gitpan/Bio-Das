@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.29 2004/01/14 16:22:22 lstein Exp $
+# $Id: Das.pm,v 1.32 2004/02/25 17:24:47 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -24,7 +24,8 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = 0.95;
+$VERSION = 0.96;
+
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
 
@@ -32,18 +33,22 @@ sub new {
   my $package = shift;
 
   # compatibility with 0.18 API
-  my ($timeout,$auth_callback,$url,$dsn,$oldstyle_api,$aggregators);
+  my ($timeout,$auth_callback,$url,$dsn,$oldstyle_api,$aggregators,$autotypes,$autocategories);
   my @p = @_;
 
   if (@p >= 1 && $p[0] =~ /^http/) {
     ($url,$dsn,$aggregators) = @p;
   } elsif ($p[0] =~ /^-/) {  # named arguments
-    ($url,$dsn,$aggregators,$timeout,$auth_callback) = rearrange([['source','server'],
-								  'dsn',
-								  ['aggregators','aggregator'],
-								  'timeout',
-								  'auth_callback'],
-								 @p);
+    ($url,$dsn,$aggregators,$timeout,$auth_callback,$autotypes,$autocategories) 
+      = rearrange([['source','server'],
+		   'dsn',
+		   ['aggregators','aggregator'],
+		   'timeout',
+		   'auth_callback',
+		   'types',
+		   'categories'
+		  ],
+		  @p);
   } else {
     ($timeout,$auth_callback) = @p;
   }
@@ -57,6 +62,8 @@ sub new {
 		    default_dsn    => $dsn,
 		    oldstyle_api   => $oldstyle_api,
 		    aggregators    => [],
+		    autotypes      => $autotypes,
+		    autocategories => $autocategories,
 	       },$package;
   $self->auth_callback($auth_callback) if defined $auth_callback;
   if ($aggregators) {
@@ -70,6 +77,14 @@ sub name {
   my $url =   shift->default_url;
   # $url =~ tr/+-//d;
   $url;
+}
+
+# holds the last error when using the oldstyle api
+sub error {
+  my $self = shift;
+  my $d    = $self->{error};
+  $self->{error} = shift if @_;
+  $d;
 }
 
 sub add_aggregator {
@@ -299,7 +314,10 @@ sub segment {
   my ($ref,$start,$stop,$version) = rearrange([['ref','name'],'start',['stop','end'],'version'],@_);
   my $dsn = $self->default_url;
   if (defined $start && defined $stop) {
-    return Bio::Das::Segment->new($ref,$start,$stop,$version,$self,$dsn);
+    my $segment =  Bio::Das::Segment->new($ref,$start,$stop,$version,$self,$dsn);
+    $segment->autotypes($self->{autotypes})           if $self->{autotypes};
+    $segment->autocategories($self->{autocategories}) if $self->{autocategories};
+    return $segment;
   } else {
     my @segments;
     my $request = Bio::Das::Request::Features->new(-dsn        => $dsn,
@@ -310,7 +328,11 @@ sub segment {
 						     push @segments,shift;
 						   });
     $self->run_requests([$request]);
-    return @segments;
+    return if @segments == 0;
+    return @segments    if wantarray;
+    return $segments[0] if @segments == 1;
+    $self->error('requested segment has more than one reference sequence in database.  Please call in a list context to retrieve them all.');
+    $self->throw('multiple segment error');
   }
 }
 
@@ -327,7 +349,6 @@ sub get_feature_by_name {
   $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
   my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
-
   my @requests = map { Bio::Das::Request::Feature2Segments->new(-class   => $class,
 								-dsn     => $_,
 								-feature => $name,
@@ -498,7 +519,10 @@ sub run_requests {
 
   delete $self->{sockets};
   if ($self->oldstyle_api()) {
-    return unless $requests->[0]->is_success();
+    unless ($requests->[0]->is_success) {
+      $self->error($requests->[0]->error);
+      return;
+    }
     return wantarray ? $requests->[0]->results : ($requests->[0]->results)[0];
   }
   return wantarray ? @$requests : $requests->[0];
@@ -743,6 +767,13 @@ the section "Authentication" for more details.
 =item $timeout = $das->timeout([$new_timeout])
 
 Get or set the timeout for slow servers.
+
+=item $error  = $das->error
+
+Get a string that describes the last error the module encountered whie
+using the serial API.  If you are using the parallel API, then use the
+request object's error() method to retrieve the error message from the
+corresponding request.
 
 =item $debug  = $das->debug([$debug_flag])
 

@@ -1,3 +1,7 @@
+2004-02-23  Lincoln Stein <lstein@cshl.edu>
+	* Fixed lots of little aggregator bugs that interfered with
+	GBrowse.
+	
 2004-01-14  Lincoln Stein <lstein@cshl.edu>
 	* Added prerequisite for Bio::Root::Root (in bioperl).
 	* Added META.yml to manifest.

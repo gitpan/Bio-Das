@@ -1,5 +1,5 @@
 package Bio::Das::Map;
-# $Id: Map.pm,v 1.4 2004/01/12 23:28:33 lstein Exp $
+# $Id: Map.pm,v 1.5 2004/02/05 14:36:42 lstein Exp $
 
 use strict;
 require Exporter;
@@ -223,7 +223,8 @@ sub _map_and_clip {
   my ($offset,$len,$strand) = @$range;
   my $clip = $self->clip;
 
-  $offset = $flip ? $dest->[OFFSET] + $source->[OFFSET] - $offset
+#  $offset = $flip ? $dest->[OFFSET] + $source->[OFFSET] - $offset
+  $offset = $flip ? ($dest->[OFFSET] + $dest->[LEN] - 1) + $source->[OFFSET] - ($offset + $len - 1)
                   : $offset + $dest->[OFFSET]-$source->[OFFSET];
 
   if ($clip) {

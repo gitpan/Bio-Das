@@ -84,11 +84,22 @@ sub label {
   $d;
 }
 
+sub notes {
+  my $self = shift;
+  return unless exists $self->{note};
+  @{$self->{note}};
+}
+
 sub note {
   my $self = shift;
   my $d = $self->{note};
   $self->{note} = shift if @_;
   $d;
+}
+
+sub add_note {
+  my $self = shift;
+  push @{$self->{note}},shift;
 }
 
 sub target {

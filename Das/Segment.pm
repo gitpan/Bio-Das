@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.8 2004/01/02 22:09:00 lstein Exp $
+# $Id: Segment.pm,v 1.10 2004/02/25 17:19:00 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -38,17 +38,39 @@ sub attributes { }
 
 sub features {
   my $self = shift;
+
   my $das = $self->das;
   my $dsn = $self->dsn;
   my @args;
-  unless ($_[0] =~ /^-/) {
-    @args = (-types => \@_);
+  unless (defined $_[0] && $_[0] =~ /^-/) {
+    if (@_) {
+      @args = (-types => \@_);
+    } else {
+      my $types       = $self->autotypes;
+      my $categories  = $self->autocategories;
+      push @args,(-types   => $types)      if $types;
+      push @args,(-category=> $categories) if $categories;
+    }
   } else {
     @args = @_;
   }
   return $das->features(@args,
 			-dsn => $dsn,
 			-segment=> [$self->asString]);
+}
+
+sub autotypes {
+  my $self = shift;
+  my $d  = $self->{autotypes};
+  $self->{autotypes} = shift if @_;
+  $d;
+}
+
+sub autocategories {
+  my $self = shift;
+  my $d  = $self->{autocategories};
+  $self->{autocategories} = shift if @_;
+  $d;
 }
 
 sub dna {
@@ -161,6 +183,8 @@ sub info {
   return $d || "";
 }
 
+sub get_SeqFeatures { return }
+
 ## Added for gbrowse interface
 sub seq_id {
   return shift->ref( @_ );
@@ -178,7 +202,7 @@ sub mtime { 0 }
 
 sub refs { }
 
-# this is almost working
+# this is working
 sub render {
   my $self = shift;
   my ($panel,$position_to_insert,$options,$max_bump,$max_label) = @_;
@@ -191,6 +215,7 @@ sub render {
   my (%type_count,%tracks,$color);
   for my $feature ($self->features) {
     my $type = $feature->type;
+
     $type_count{$type}++;
     if (my $track = $tracks{$type}) {
       $track->add_feature($feature);
@@ -229,6 +254,7 @@ sub render {
 		     : $options == 5 ? 1
 		     : 0;
     my $track = $tracks{$type};
+
     $track->configure(-connector  => 'none') if !$do_bump;
     $track->configure(-bump  => $do_bump,
 		      -label => $do_label);

@@ -55,12 +55,32 @@ sub init{
   $self->{'linktxt'} = "more information";
 }
 
+sub init_segments{
+  my ($self,$segments) = @_;
+  if (scalar @$segments > 1 && (grep {$_ =~ /^AL\d{6}/i} @$segments)){
+    @$segments = grep {$_ !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])/i} @$segments;
+  }
+}
+
 sub length{
   my ($self,$seg) = @_;
   if ($seg !~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
-    #get contig coordinates
+    if ($seg !~/^\w+\.\w+\.\w+\.\w+$/i){
+      #get contig coordinates
+      if (!$self->{'_length'}->{$seg}){
+	my $databases = &EnsEMBL::DB::Core::get_databases('core');
+	my $ca = $databases->{'core'}->get_CloneAdaptor();
+	my $clone = $ca->fetch_by_name($seg);
+	my $contigs = $clone->get_all_Contigs();
+	if(@$contigs == 1){
+	  $self->{'_length'}->{$seg} = $contigs->[0]->length();
+	}
+      }
+      return $self->{'_length'}->{$seg};
+    }
     return;
   }
+  #get chromosome coordinates
   if (!$self->{'_length'}->{$seg}){
     my $databases = &EnsEMBL::DB::Core::get_databases('lite');
     my $ca = $databases->{'lite'}->get_ChromosomeAdaptor();
@@ -117,12 +137,21 @@ sub build_features{
   my $segid  = $opts->{'segment'};
   my $start = $opts->{'start'};
   my $end   = $opts->{'end'};
+  my $restriction = "";
+  my $query       = "";
   my @features = ();
-  if (!$end){
+
+  if (defined $start && !$end){
     return @features;
   }
 
-  my $query = qq(SELECT ms.id_sts,
+  if (defined $start && defined $end){
+    $restriction = qq(AND (ms.start_coordinate + ssm.start_coordinate -1) BETWEEN '$start' AND '$end');
+  }
+
+  if ($segid =~ /^(10|20|(1?[1-9])|(2?[12])|[XY])$/i){
+    #get chromosome coordinates
+    $query = qq(SELECT ms.id_sts,
        (ms.start_coordinate + ssm.start_coordinate -1) as start_coord,
        (ms.end_coordinate + ssm.start_coordinate -1) as end_coord,
        ss.sts_name,
@@ -131,21 +160,53 @@ sub build_features{
        length(ss.antisense_oligoprimer) as anti_len,
        ss.pass_status,
        ms.is_revcomp as ori
-FROM   chrom_seq cs,
-       database_dict dd,
+       FROM   chrom_seq cs,
        seq_seq_map ssm,
        mapped_sts ms,
        sts_summary ss
-WHERE  cs.database_seqname = '$segid'
-AND    dd.id_dict = cs.database_source
-AND    dd.database_name = 'NCBI'
-AND    dd.database_version = '33'
-AND    ssm.id_chromseq = cs.id_chromseq
-AND    ms.id_sequence = ssm.sub_sequence
-AND    ss.id_sts = ms.id_sts
-AND    (ms.start_coordinate + ssm.start_coordinate) BETWEEN '$start' AND '$end'
-ORDER BY end_coord);
+       WHERE  cs.database_seqname = '$segid'
+       AND    cs.is_current = 1		
+       AND    ssm.id_chromseq = cs.id_chromseq
+       AND    ms.id_sequence = ssm.sub_sequence
+       AND    ss.assay_type = 8
+       AND    ss.id_sts = ms.id_sts
+       $restriction
+       ORDER BY start_coord);
+}
+  elsif ($segid !~ /^\w+\.\w+\.\w+\.\w+$/i){
+    #get contig coordinates
+    $query = qq(SELECT 	distinct ssum.sts_name,
+	     ssum.id_sts as sts_id,
+	     length(ssum.sense_oligoprimer) as sen_len,
+	     length(ssum.antisense_oligoprimer) as anti_len,
+	     ssum.pass_status,
+	     --start_coord,
+	     (1 +(csm.contig_orientation * (ms.start_coordinate 
+             - csm.start_coordinate))) as start_coord,
+	     --end_coord
+	     (1 +(csm.contig_orientation * (ms.end_coordinate -
+	     csm.start_coordinate))) as end_coord
+	     FROM	clone_seq cs,
+	     clone_seq_map csm,
+	     snp_sequence ss,
+	     mapped_sts ms,
+	     sts_summary ssum
+	     WHERE (ms.start_coordinate BETWEEN csm.start_coordinate
+                    AND csm.end_coordinate
+	     OR	ms.start_coordinate BETWEEN csm.end_coordinate
+                                    AND csm.start_coordinate)
+	     AND	cs.database_seqname = '$segid'
+	     AND	cs.id_cloneseq = csm.id_cloneseq
+	     AND        cs.is_current = 1
+	     AND	csm.id_sequence = ms.id_sequence
+             AND        ssum.assay_type = 8
+	     AND	ms.id_sts = ssum.id_sts
+	     ORDER BY start_coord);
 
+  }
+  else{
+    return @features;
+  }
   my $ref = $self->transport->query($query);
 
 

@@ -33,6 +33,7 @@ use Getopt::Long;
 
 $ENV{'PATH'} = "/bin";
 my %opts   = ();
+my @saveargv = @ARGV;
 my $result = GetOptions(
 			'dsn:s'        => \$opts{'dsn'},
 			'dsnversion:i' => \$opts{'dsnversion'},
@@ -47,12 +48,22 @@ my $result = GetOptions(
 			'password:s'   => \$opts{'password'},
 			'dbport:i'     => \$opts{'dbport'},
 			'help|?'       => \$opts{'usage'},
+			'c|config:s'   => \$opts{'inifile'},
 		       );
+@ARGV = @saveargv;
+my $config = Bio::Das::ProServer::Config->new($opts{'inifile'});
 
-my $config = Bio::Das::ProServer::Config->new();
+$config->{'port'}     = $opts{'port'}            if(defined $opts{'port'});
+$config->{'hostname'} = $opts{'hostname'}        if(defined $opts{'hostname'});
+if(exists $config->{'ensemblhome'}) {
+  $ENV{'ENS_ROOT'}      = $config->{'ensemblhome'};
+  print STDERR qq(Set ENS_ROOT to $ENV{'ENS_ROOT'}\n);
+}
 
-$config->{'port'}     = $opts{'port'}     if(defined $opts{'port'});
-$config->{'hostname'} = $opts{'hostname'} if(defined $opts{'hostname'});
+if(exists $config->{'oraclehome'}) {
+  $ENV{'ORACLE_HOME'}   = $config->{'oraclehome'};
+  print STDERR qq(Set ORACLE_HOME to $ENV{'ORACLE_HOME'}\n);
+}
 
 if(defined $opts{'dsn'}) {
   die("You must specify a dsn name when using '--dsn'")     if($opts{'dsn'} eq "");
