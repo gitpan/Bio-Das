@@ -1,15 +1,14 @@
 package Bio::Das::Request;
 # encapsulates a request on a DAS server
 # also knows how to deal with response
-# $Id: Request.pm,v 1.5 2002/08/31 23:32:53 lstein Exp $
+# $Id: Request.pm,v 1.9 2003/05/22 19:46:55 avc Exp $
 
 use strict;
-require 5.6.0;  # because of indirect method calls
 
 use Bio::Das::Util;
 use HTML::Parser;
 use Compress::Zlib;
-use Carp 'croak','confess';
+use Carp qw/croak confess/;
 
 use constant GZIP_MAGIC => 0x1f8b;
 use constant OS_MAGIC => 0x03;
@@ -28,15 +27,15 @@ sub new {
 					],@_);
   $dsn = Bio::Das::DSN->new($dsn) unless ref $dsn;
   return bless {
-		dsn       => $dsn,
-		args      => $args,
-		callback  => $callback,
-		results   => [],         # list of objects to return
-		p_success           => 0,
-		p_error             => '',
-		p_compressed_stream => 0,
-		p_xml_parser        => undef,
-	       },$package;
+		            dsn                 => $dsn,
+		            args                => $args,
+		            callback            => $callback,
+		            results             => [],         # list of objects to return
+		            p_success           => 0,
+		            p_error             => '',
+		            p_compressed_stream => 0,
+		            p_xml_parser        => undef,
+	            },$package;
 }
 
 # ==  to be overridden in subclasses ==
@@ -50,12 +49,11 @@ sub command {
 sub create_parser {
   my $self = shift;
   my $parser= HTML::Parser->new(
-				api_version   => 3,
-				start_h       => [ sub { $self->tag_starts(@_) },'tagname,attr' ],
-				end_h         => [ sub { $self->tag_stops(@_)  },'tagname' ],
-				text_h        => [ sub { $self->char_data(@_)  },  'dtext' ],
-			       );
-
+     api_version   => 3,
+     start_h       => [ sub { $self->tag_starts(@_) },'tagname,attr' ],
+     end_h         => [ sub { $self->tag_stops(@_)  },'tagname' ],
+     text_h        => [ sub { $self->char_data(@_)  },'dtext' ],
+  );
 }
 
 # tags will be handled by a method named t_TAGNAME
@@ -64,7 +62,7 @@ sub tag_starts {
   my ($tag,$attrs) = @_;
   my $method = "t_$tag";
   $self->{char_data} = '';  # clear char data
-  eval {$self->$method($attrs)};   # indirect method call
+  $self->can($method) ? $self->$method($attrs) : $self->do_tag($tag,$attrs);
 }
 
 # tags will be handled by a method named t_TAGNAME
@@ -72,12 +70,21 @@ sub tag_stops {
   my $self = shift;
   my $tag = shift;
   my $method = "t_$tag";
-  $self->$method() if $self->can($method);
+  $self->can($method)
+    ? $self->$method()
+    : $self->do_tag($tag);
 }
+
+sub do_tag {
+  my $self = shift;
+  my ($tag,$attrs) = @_;
+  # do nothing
+}
+
 
 sub char_data {
   my $self = shift;
-  if (my $text = shift) {
+  if (@_ && length(my $text = shift)>0) {
     $self->{char_data} .= $text;
   } else {
     $self->trim($self->{char_data});
@@ -108,14 +115,15 @@ sub clear_results {
 sub results {
   my $self = shift;
   my $r = $self->{results} or return;
-  return @$r;
+  return wantarray ? @$r : $r;
 }
 
 # add one or more objects to our results list
 sub add_object {
   my $self = shift;
   if (my $cb = $self->callback) {
-    eval {$cb->(@_)} or warn "$@";
+    eval {$cb->(@_)};
+    warn $@ if $@;
   } else {
     push @{$self->{results}},@_;
   }
@@ -214,10 +222,11 @@ sub headers {
   my $status = $hashref->{'X-Das-Status'} or
     return $self->error('no X-Das-Status header');
 
-  $status == 200 or
+  $status =~ /200/ or
     return $self->error("DAS reported error code $status");
 
-  $self->compressed(1) if $hashref->{'Content-Encoding'} =~ /gzip/;
+  $self->compressed(1) if exists $hashref->{'Content-Encoding'} &&
+    $hashref->{'Content-Encoding'} =~ /gzip/;
 
   1;  # we passed the tests, so we continue to parse
 }

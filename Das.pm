@@ -1,15 +1,20 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.14 2002/10/25 19:20:09 lstein Exp $
+# $Id: Das.pm,v 1.23 2003/12/29 23:20:32 lstein Exp $
 
 # prototype parallel-fetching Das
 
 use strict;
+use Bio::Root::Root;
 use Bio::Das::HTTP::Fetch;
+use Bio::Das::TypeHandler;     # bring in the handler for feature type ontologies
 use Bio::Das::Request::Dsn;    # bring in dsn  parser
 use Bio::Das::Request::Types;  # bring in type parser
 use Bio::Das::Request::Dnas;
 use Bio::Das::Request::Features;
+use Bio::Das::Request::Feature2Segments;
 use Bio::Das::Request::Entry_points;
+use Bio::Das::Request::Stylesheet;
+use Bio::Das::FeatureIterator;
 use Bio::Das::Util 'rearrange';
 use Carp;
 
@@ -17,24 +22,120 @@ use IO::Socket;
 use IO::Select;
 
 use vars '$VERSION';
-$VERSION = 0.75;
+use vars '@ISA';
+@ISA     = 'Bio::Root::Root';
+$VERSION = 0.92;
+*fetch_feature_by_name = \&get_feature_by_name;
+my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
 
 sub new {
   my $package = shift;
-  my $timeout = shift;
-  my $auth_callback = shift;
+
+  # compatibility with 0.18 API
+  my ($timeout,$auth_callback,$url,$dsn,$oldstyle_api,$aggregators);
+  my @p = @_;
+
+  if (@p >= 1 && $p[0] =~ /^http/) {
+    ($url,$dsn,$aggregators) = @p;
+  } elsif ($p[0] =~ /^-/) {  # named arguments
+    ($url,$dsn,$aggregators,$timeout,$auth_callback) = rearrange(['source',
+								  'dsn',
+								  ['aggregators','aggregator'],
+								  'timeout',
+								  'auth_callback'],
+								 @p);
+  } else {
+    ($timeout,$auth_callback) = @p;
+  }
+
+  $oldstyle_api = defined $url;
+
   my $self = bless {
-		'sockets'  => {},   # map socket to Bio::Das::HTTP::Fetch objects
-		'timeout'  => $timeout,
+		    'sockets'   => {},   # map socket to Bio::Das::HTTP::Fetch objects
+		    'timeout'   => $timeout,
+		    default_server => $url,
+		    default_dsn    => $dsn,
+		    oldstyle_api   => $oldstyle_api,
+		    aggregators    => [],
 	       },$package;
   $self->auth_callback($auth_callback) if defined $auth_callback;
+  if ($aggregators) {
+    my @a = ref($aggregators) eq 'ARRAY' ? @$aggregators : $aggregators;
+    $self->add_aggregator($_) foreach @a;
+  }
   return $self;
+}
+
+sub name {
+  my $url =   shift->default_url;
+  # $url =~ tr/+-//d;
+  $url;
+}
+
+sub add_aggregator {
+  my $self       = shift;
+  my $aggregator = shift;
+  warn "aggregator = $aggregator" if $self->debug;
+
+  my $list = $self->{aggregators} ||= [];
+  if (ref $aggregator) { # an object
+    @$list = grep {$_->get_method ne $aggregator->get_method} @$list;
+    push @$list,$aggregator;
+  }
+
+  elsif ($aggregator =~ /^(\w+)\{([^\/\}]+)\/?(.*)\}$/) {
+    my($agg_name,$subparts,$mainpart) = ($1,$2,$3);
+    my @subparts = split /,\s*/,$subparts;
+    my @args = (-method    => $agg_name,
+		-sub_parts => \@subparts);
+    push @args,(-main_method => $mainpart) if $mainpart;
+    warn "making an aggregator with (@args), subparts = @subparts" if $self->debug;
+    require Bio::DB::GFF::Aggregator;
+    push @$list,Bio::DB::GFF::Aggregator->new(@args);
+  }
+
+  else {
+    my $class = "Bio::DB::GFF::Aggregator::\L${aggregator}\E";
+    eval "require $class";
+    $self->throw("Unable to load $aggregator aggregator: $@") if $@;
+    push @$list,$class->new();
+  }
+}
+
+sub aggregators {
+  my $self = shift;
+  my $d = $self->{aggregators};
+  if (@_) {
+    $self->clear_aggregators;
+    $self->add_aggregator($_) foreach @_;
+  }
+  return unless $d;
+  return @$d;
+}
+
+sub clear_aggregators { shift->{aggregators} = [] }
+
+sub default_dsn {
+  my $self = shift;
+  my $d    = $self->{default_dsn};
+  $self->{default_dsn} = shift if @_;
+  $d;
+}
+
+sub default_server { shift->{default_server} }
+
+sub oldstyle_api   { shift->{oldstyle_api}   }
+
+sub default_url {
+  my $self = shift;
+  return unless $self->default_server && $self->default_dsn;
+  return join '/',$self->default_server,$self->default_dsn;
 }
 
 sub auth_callback{
   my $self = shift;
   if(defined $_[0]){
-    croak "Authenication callback routine to set is not a reference to code" 
+    croak "Authentication callback routine to set is not a reference to code" 
       unless ref $_[0] eq "CODE";
   }
 
@@ -68,17 +169,30 @@ sub debug {
 # will return a list of DSN objects
 sub dsn {
   my $self = shift;
+  return $self->default_dsn(@_) if $self->oldstyle_api;
+  return $self->_dsn(@_);
+}
+
+sub _dsn {
+  my $self = shift;
   my @requests = $_[0]=~/^-/ ? Bio::Das::Request::Dsn->new(@_)
                              : map { Bio::Das::Request::Dsn->new($_) } @_;
   $self->run_requests(\@requests);
 }
 
+sub sources {
+  my $self = shift;
+  my $default_server = $self->default_server or return;
+  return $self->_dsn($default_server);
+}
+
 sub entry_points {
   my $self = shift;
   my ($dsn,$ref,$callback) =  rearrange([['dsn','dsns'],
-					 ['ref','refs'],
+					 ['ref','refs','refseq','seq_id','name'],
 					 'callback',
 					],@_);
+  $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
   my @dsn = ref $dsn ? @$dsn : $dsn;
   my @request;
@@ -90,6 +204,23 @@ sub entry_points {
   $self->run_requests(\@request);
 }
 
+sub stylesheet {
+  my $self = shift;
+  my ($dsn,$callback) =  rearrange([['dsn','dsns'],
+				    'callback',
+				   ],@_);
+  $dsn ||= $self->default_url;
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Stylesheet->new(-dsn    => $dsn,
+						     -callback => $callback);
+  }
+  $self->run_requests(\@request);
+}
+
+
 # call with list of DSN objects, and optionally list of segments and categories
 sub types {
   my $self = shift;
@@ -99,6 +230,7 @@ sub types {
 								    'enumerate',
 								    'callback',
 								   ],@_);
+  $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
   my @dsn = ref $dsn ? @$dsn : $dsn;
   my @request;
@@ -120,8 +252,9 @@ sub dna {
 					     ['segment','segments'],
 					     'callback',
 					    ],@_);
+  $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
-  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
   my @request;
   for my $dsn (@dsn) {
     push @request,Bio::Das::Request::Dnas->new(-dsn        => $dsn,
@@ -131,26 +264,115 @@ sub dna {
   $self->run_requests(\@request);
 }
 
+# 0.18 API - fetch by segment
+sub segment {
+  my $self = shift;
+  my ($ref,$start,$stop,$version) = rearrange([['ref','name'],'start',['stop','end'],'version'],@_);
+  my $dsn = $self->default_url;
+  if (defined $start && defined $stop) {
+    return Bio::Das::Segment->new($ref,$start,$stop,$version,$self,$dsn);
+  } else {
+    my @segments;
+    my $request = Bio::Das::Request::Features->new(-dsn        => $dsn,
+						   -das        => $self,
+						   -segments   => $ref,
+						   -type       => 'NULL',
+						   -segment_callback => sub {
+						     push @segments,shift;
+						   });
+    $self->run_requests([$request]);
+    return @segments;
+  }
+}
+
+# 0.18 API - fetch by feature name - returns a set of Bio::Das::Segment objects
+sub get_feature_by_name {
+  my $self = shift;
+  my ($name, $class, $ref, $base_start, $stop) 
+       = $self->_rearrange([qw(NAME CLASS REF START END)],@_);
+  my $dsn = $self->default_url;
+  my $request = Bio::Das::Request::Feature2Segments->new(-class   => $class,
+							 -dsn     => $dsn,
+							 -feature => $name,
+							 -das     => $self,
+							);
+  $self->run_requests([$request]);
+  return $request->results;
+}
+
+# gbrowse compatibility
+sub refclass { 'Segment' }
+
 # call with list of DSNs, and optionally list of segments and categories
 sub features {
   my $self = shift;
-  my ($dsn,$segments,$types,$categories,$callback) = rearrange([['dsn','dsns'],
-								['segment','segments'],
-								['type','types'],
-								['category','categories'],
-								'callback',
-							       ],@_);
+  my ($dsn,$segments,$types,$categories,
+      $fcallback,$scallback,$feature_id,$group_id,$iterator) 
+                                 = rearrange([['dsn','dsns'],
+			                      ['segment','segments'],
+					      ['type','types'],
+					      ['category','categories'],
+					      ['callback','feature_callback'],
+					      'segment_callback',
+                                              'feature_id',
+                                              'group_id',
+					      'iterator',
+					     ],@_);
+
   croak "must provide -dsn argument" unless $dsn;
-  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
+
+  # handle types
+  my @aggregators;
+  my $typehandler = Bio::Das::TypeHandler->new;
+  my $typearray   = $typehandler->parse_types($types);
+  for my $a ($self->aggregators) {
+    unshift @aggregators,$a if $a->disaggregate($typearray,$typehandler);
+  }
+
+  my @types = map {$_->[0]} @$typearray;
   my @request;
   for my $dsn (@dsn) {
-    push @request,Bio::Das::Request::Features->new(-dsn        => $dsn,
-						   -segments   => $segments,
-						   -types      => $types,
-						   -categories => $categories,
-						   -callback   => $callback);
+    push @request,Bio::Das::Request::Features->new(
+                           -dsn              => $dsn,
+						-segments         => $segments,
+						-types            => \@types,
+						-categories       => $categories,
+						-feature_callback => $fcallback  || undef,
+						-segment_callback => $scallback  || undef,
+                           -feature_id       => $feature_id || undef,
+                           -group_id         => $group_id   || undef,
+                           );
   }
-  $self->run_requests(\@request);
+  my @results = $self->run_requests(\@request);
+  $self->aggregate(\@aggregators,
+		   $results[0]->can('results') ? \@results : [\@results],
+		   $typehandler) if @aggregators && @results;
+
+  return Bio::Das::FeatureIterator->new(\@results) if $iterator;
+  return wantarray ? @results : $results[0];
+}
+
+sub search_notes { }
+
+sub aggregate {
+  my $self = shift;
+  my ($aggregators,$featarray,$typehandler) = @_;
+  my @f;
+
+  foreach (@$featarray) {
+    if (ref($_) eq 'ARRAY') { # 0.18 API
+      push @f,$_;
+    } elsif ($_->is_success) { # current API
+      push @f,scalar $_->results;
+    }
+  }
+  return unless @f;
+  for my $f (@f) {
+    for my $a (@$aggregators) {
+      $a->aggregate($f,$typehandler);
+    }
+  }
 }
 
 sub add_pending {
@@ -168,13 +390,15 @@ sub remove_pending {
 sub run_requests {
   my $self     = shift;
   my $requests = shift;
-  my $auth_callback = $self->auth_callback;
+  my $auth_callback = $self->auth_callback();
 
   for my $request (@$requests) {
-    my $fetcher = Bio::Das::HTTP::Fetch->new(-request => $request,
-					     -headers => {'Accept-encoding' => 'gzip'},
-					     -proxy   => $self->proxy || ''
-					    ) or next;
+    my $fetcher = Bio::Das::HTTP::Fetch->new(
+                            -request => $request,
+					        -headers => {'Accept-encoding' => 'gzip'},
+					        -proxy   => $self->proxy || ''
+					        ) or next;
+                            
     $fetcher->debug(1) if $self->debug;
     $self->add_pending($fetcher);
   }
@@ -198,20 +422,22 @@ sub run_requests {
 
     foreach (@$writable) {                      # handle is ready for writing
       my $fetcher = $self->{sockets}{$_};       # recover the HTTP fetcher
-      my $result = $fetcher->send_request;      # try to send the request
+      my $result = $fetcher->send_request();      # try to send the request
       $readers->add($_) if $result;             # send successful, so monitor for reading
-      $fetcher->request->error($fetcher->error) 
-	unless $result;                         # copy the error message
+      $fetcher->request->error($fetcher->error())
+	  unless $result;                           # copy the error message
       $writers->remove($_);                     # and remove from list monitored for writing
     }
 
-    foreach (@$readable) {        # handle is ready for reading
+    foreach (@$readable) {                      # handle is ready for reading
       my $fetcher = $self->{sockets}{$_};       # recover the HTTP object
       my $result = $fetcher->read;              # read some data
-      if($fetcher->error =~ /^401\s/ && $self->auth_callback){ # Don't give up if given authentication challenge
-         $self->authenticate($fetcher);   # The result will automatically appear, as fetcher contains request reference
+      if($fetcher->error
+	     && $fetcher->error =~ /^401\s/
+	     && $self->auth_callback()){              # Don't give up if given authentication challenge
+         $self->authenticate($fetcher);         # The result will automatically appear, as fetcher contains request reference
       }
-      unless ($result) {                    # remove if some error occurred
+      unless ($result) {                        # remove if some error occurred
 	$fetcher->request->error($fetcher->error) unless defined $result;
 	$readers->remove($_);
 	delete $self->{sockets}{$_};
@@ -230,6 +456,10 @@ sub run_requests {
   }
 
   delete $self->{sockets};
+  if ($self->oldstyle_api()) {
+    return unless $requests->[0]->is_success();
+    return wantarray ? $requests->[0]->results : ($requests->[0]->results)[0];
+  }
   return wantarray ? @$requests : $requests->[0];
 }
 
@@ -268,10 +498,11 @@ sub authenticate($$$){
   $fetcher->request->dsn->set_authentication($user, $pass);
   return $self->run_requests([$request]);
 }
+
 1;
 
-
 __END__
+
 
 =head1 NAME
 
@@ -281,6 +512,7 @@ Bio::Das - Interface to Distributed Annotation System
 
   use Bio::Das;
 
+  # PARALLEL API
   # create a new DAS agent with a timeout of 5 sec
   my $das = Bio::Das->new(5);
 
@@ -308,6 +540,14 @@ Bio::Das - Interface to Distributed Annotation System
                                     print "$segment => $feature ($start,$end)\n";
                                   }
 			       );
+
+   # SERIALIZED API
+   my $das = Bio::Das->new(-source => 'http://www.wormbase.org/db/das',
+                           -dsn    => 'elegans',
+                           -aggregators => ['primary_transcript','clone']);
+   my $segment  = $das->segment('Chr1');
+   my @features = $segment->features;
+   my $dna      = $segment->dna;
 
 =head1 DESCRIPTION
 
@@ -356,8 +596,7 @@ This class contains information about a DAS data source.
 
 =item Bio::Das::Stylesheet
 
-This class is unimplemented, but is intended to hold information
-about the DAS stylesheet.
+This class contains information about the stylesheet for a DAS source.
 
 =back
 
@@ -367,7 +606,9 @@ The public Bio::Das constructor is new():
 
 =over 4
 
-=item $das = Bio::Das->new($timeout [,$authentication_callback])
+=item $das = Bio::Das->new(-timeout       => $timeout,
+                           -auth_callback => $authentication_callback,
+                           -aggregators   => \@aggregators)
 
 Create a new Bio::Das object, with the indicated timeout and optional
 callback for authentication.  The timeout will be used to decide when
@@ -376,7 +617,27 @@ value is in seconds, and can be fractional (most systems will provide
 millisecond resolution).  The authentication callback will be invoked
 if the remote server challenges Bio::Das for authentication credentials.
 
+Aggregators are used to build multilevel hierarchies out of the raw
+features in the DAS stream.  For a description of aggregators, see
+L<Bio::DB::GFF>, which uses exactly the same aggregator system as
+Bio::Das.
+
 If successful, this method returns a Bio::Das object.
+
+=item $das = Bio::Das->new($timeout [,$authentication_callback])
+
+Shortcut for the above.
+
+=item $das = Bio::Das->new(-source => $url, -dsn => $dsn, -aggregators=>\@aggregators);
+
+This is the serialized DAS API for clients that will be accessing a
+single server exclusively.  The arguments are the URL of the remote
+DAS server (ending with the "das" component of the URL), the remote
+data source, and the list of aggregators to load. 
+
+=item $das = Bio::Das->new('http://das.server/cgi-bin/das',$dsn,$aggregators)
+
+Shortcut for the above.
 
 =back
 
@@ -412,6 +673,8 @@ The following methods accept a series of arguments, contact the
 indicated DAS servers, and return a series of response objects from
 which you can learn the status of the request and fetch the results.
 
+=over 4
+
 =item @response = $das->dsn(@list_of_urls)
 
 The dsn() method accepts a list of DAS server URLs and returns a list
@@ -446,22 +709,27 @@ this manual page was written, the following was the output of this
 script.
 
  http://stein.cshl.org/perl/das/dsn:	
-	http://stein.cshl.org/perl/das/chr22_transcripts	This is the EST-predicted transcripts on...
+ http://stein.cshl.org/perl/das/chr22_transcripts	This is the EST-predicted transcripts on...
+
+ http://servlet.sanger.ac.uk:8080/das:	
+ http://servlet.sanger.ac.uk:8080/das/ensembl1131   The latest Ensembl database	
+
  http://genome.cse.ucsc.edu/cgi-bin/das/dsn:	
-	http://genome.cse.ucsc.edu/cgi-bin/das/hg8	Human Aug. 2001 Human Genome at UCSC
-	http://genome.cse.ucsc.edu/cgi-bin/das/hg10	Human Dec. 2001 Human Genome at UCSC
-	http://genome.cse.ucsc.edu/cgi-bin/das/mm1	Mouse Nov. 2001 Human Genome at UCSC
-	http://genome.cse.ucsc.edu/cgi-bin/das/mm2	Mouse Feb. 2002 Human Genome at UCSC
-	http://genome.cse.ucsc.edu/cgi-bin/das/hg11	Human April 2002 Human Genome at UCSC
-	http://genome.cse.ucsc.edu/cgi-bin/das/hg12	Human June 2002 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/hg8	Human Aug. 2001 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/hg10	Human Dec. 2001 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/mm1	Mouse Nov. 2001 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/mm2	Mouse Feb. 2002 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/hg11	Human April 2002 Human Genome at UCSC
+ http://genome.cse.ucsc.edu/cgi-bin/das/hg12	Human June 2002 Human Genome at UCSC
  http://user:pass@www.wormbase.org/db/das/dsn:	
-	http://user:pass@www.wormbase.org/db/das/elegans     This is the The C. elegans genome at CSHL
+ http://user:pass@www.wormbase.org/db/das/elegans     This is the The C. elegans genome at CSHL
+ 
  https://euclid.well.ox.ac.uk/cgi-bin/das/dsn:	
-	https://euclid.well.ox.ac.uk/cgi-bin/das/dicty	        Test annotations
-	https://euclid.well.ox.ac.uk/cgi-bin/das/elegans	C. elegans annotations on chromosome I & II
-	https://euclid.well.ox.ac.uk/cgi-bin/das/ensembl	ensembl test annotations
-	https://euclid.well.ox.ac.uk/cgi-bin/das/test	        Test annotations
-	https://euclid.well.ox.ac.uk/cgi-bin/das/transcripts	transcripts test annotations
+ https://euclid.well.ox.ac.uk/cgi-bin/das/dicty	        Test annotations
+ https://euclid.well.ox.ac.uk/cgi-bin/das/elegans	C. elegans annotations on chromosome I & II
+ https://euclid.well.ox.ac.uk/cgi-bin/das/ensembl	ensembl test annotations
+ https://euclid.well.ox.ac.uk/cgi-bin/das/test	        Test annotations
+ https://euclid.well.ox.ac.uk/cgi-bin/das/transcripts	transcripts test annotations
 
 Notice that the DSN URLs always have the format:
 
@@ -575,11 +843,45 @@ or to an array ref of several DSNs.  Other arguments are optional:
   -callback     (optional) Specifies a subroutine to be invoked on each
                 Bio::Das::Feature object received.
 
-If a callback is specified, then the @response array will contain the
-status codes for each request, but results() will return empty.
+  -segment_callback (optional) Specifies a subroutine to be invoked on each
+                    Segment that is retrieved.
+
+  -iterator     (optional)  If true, specifies that an iterator should be
+                returned rather than a list of features.
+
+If a callback (-callback or -segment_callback) is specified, then the
+@response array will contain the status codes for each request, but
+results() will return empty.
+
+The subroutine specified by -callback will be invoked every time a
+feature is encountered.  The code will be passed a single argument
+consisting of a Bio::Das::Feature object.  You can find out what
+segment this feature is contained within by executing the object's
+segment() method.
+
+The subroutine specified by -segment_callback will be invoked every
+time one of the requested segments is finished.  It will be invoked
+with two arguments consisting of the name of the segment and an array
+ref containing the list of Bio::Das::Feature objects contained within
+the segment.
+
+If both -callback and -segment_callback are specified, then the first
+subroutine will be invoked for each feature, and the second will be
+invoked on each segment *AFTER* the segment is finished.  In this
+case, the segment processing subroutine will be passed an empty list
+of features.
 
 Note, if the -segment argument is not provided, some servers will
 provide all the features in the database.
+
+The -iterator argument is a true/false flag.  If true, the call will
+return a L<Bio::Das::FeatureIterator> object.  This object implements
+a single method, next_seq(), which returns the next Feature.  Example:
+
+   $iterator = $das->features(-dsn=>[$dsn1,$dsn2],-iterator=>1);
+   while (my $feature = $iterator->next_seq) {
+     print "got a ",$feature->method,"\n";
+   }
 
 =item @response = $das->dna(-dsn=>[$dsn1,$dsn2],@other_args)
 
@@ -606,6 +908,59 @@ several DSNs.  Other arguments are optional:
 similar methods.
 
 =back
+
+=head2 add_aggregator
+
+NOTE: Aggregator support is currently experimental and is provided for
+compatibility with Generic Genome Browser.
+
+ Title   : add_aggregator
+ Usage   : $db->add_aggregator($aggregator)
+ Function: add an aggregator to the list
+ Returns : nothing
+ Args    : an aggregator
+ Status  : public
+
+This method will append an aggregator to the end of the list of
+registered aggregators.  Three different argument types are accepted:
+
+  1) a Bio::DB::GFF::Aggregator object -- will be added
+  2) a string in the form "aggregator_name{subpart1,subpart2,subpart3/main_method}"
+         -- will be turned into a Bio::DB::GFF::Aggregator object (the /main_method
+        part is optional).
+  3) a valid Perl token -- will be turned into a Bio::DB::GFF::Aggregator
+        subclass, where the token corresponds to the subclass name.
+
+=cut
+
+=head2 aggregators
+
+ Title   : aggregators
+ Usage   : $db->aggregators([@new_aggregators]);
+ Function: retrieve list of aggregators
+ Returns : list of aggregators
+ Args    : a list of aggregators to set (optional)
+ Status  : public
+
+This method will get or set the list of aggregators assigned to
+the database.  If 1 or more arguments are passed, the existing
+set will be cleared.
+
+=cut
+
+=head2 clear_aggregators
+
+ Title   : clear_aggregators
+ Usage   : $db->clear_aggregators
+ Function: clears list of aggregators
+ Returns : nothing
+ Args    : none
+ Status  : public
+
+This method will clear the aggregators stored in the database object.
+Use aggregators() or add_aggregator() to add some back.
+
+=cut
 
 =head2 Fetching results
 

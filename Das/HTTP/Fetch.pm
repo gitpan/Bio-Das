@@ -1,6 +1,6 @@
 package Bio::Das::HTTP::Fetch;
 # file: Fetch.pm
-# $Id: Fetch.pm,v 1.9 2002/08/31 23:32:53 lstein Exp $
+# $Id: Fetch.pm,v 1.12 2003/05/22 19:46:55 avc Exp $
 
 use strict;
 use IO::Socket qw(:DEFAULT :crlf);
@@ -11,7 +11,7 @@ use Carp 'croak';
 use Errno 'EINPROGRESS','EWOULDBLOCK';
 use vars '$VERSION';
 
-$VERSION = '1.1';
+$VERSION = '1.11';
 my $ERROR = '';   # for errors that occur before we create the object
 
 use constant READ_UNIT => 1024 * 5;  # 5K read units
@@ -68,25 +68,25 @@ sub new {
                 status            => 'waiting',
                 socket            => $sock,
                 path              => $path,
-		request           => $request,
-		outgoing_headers  => $headers,
+		        request           => $request,
+		        outgoing_headers  => $headers,
                 url               => $url,
                 user              => $user,
                 pass              => $pass,
                 host              => $host,
                 # rather than encoding for every request
                 auth              => ($user ? encode_base64("$user:$pass") : ""),
-		mode              => $mode, #http vs https
-		debug             => $debug,
-		incoming_header   => undef,  # none yet
+		        mode              => $mode, #http vs https
+		        debug             => $debug,
+		        incoming_header   => undef,  # none yet
                },$pack;
 }
 
 # this will return the socket associated with the object
-sub socket   { shift->{socket} }
-sub path     { shift->{path}   }
-sub request  { shift->{request} }
-sub outgoing_args    { shift->request->args    }
+sub socket           { shift->{socket}           }
+sub path             { shift->{path}             }
+sub request          { shift->{request}          }
+sub outgoing_args    { shift->request->args      }
 sub outgoing_headers { shift->{outgoing_headers} }
 sub url              { shift->{url}              }  # mostly for debugging purposes
 sub user             { shift->{user}             }  # mostly for debugging purposes
@@ -94,12 +94,14 @@ sub pass             { shift->{pass}             }  # mostly for debugging purpo
 sub host             { shift->{host}             }  # mostly for debugging purposes
 sub auth             { shift->{auth}             }
 sub incoming_header  { shift->{incoming_header}  }  # buffer for header data
+
 sub mode {
   my $self = shift;
   my $d    = $self->{mode};
   $self->{mode} = shift if @_;
   $d;
 }
+
 sub method   {
   my $self = shift;
   my $meth = uc $self->request->method;
@@ -138,7 +140,7 @@ sub parse_url {
 
   my ($user,$pass); 
   ($user, $hostent) = $hostent =~ /^(.*@)?(.*)/;
-  ($user, $pass) = split(':',substr($user,0,length($user)-1));
+  ($user, $pass) = split(':',substr($user,0,length($user)-1)) if $user;
   if($pass and not $ssl){warn "Using password in unencrypted URI against RFC #2396 recommendation"}
 
   my ($host,$port) = split(':',$hostent);
@@ -198,7 +200,7 @@ sub send_request {
     $self->complete_ssl_handshake($self->{socket}) || return $self->error($self->{socket}->error);
   }
 
-  $self->{formatted_request} ||= $self->format_request;
+  $self->{formatted_request} ||= $self->format_request();
 
   warn "SENDING $self->{formatted_request}" if $self->debug;
 
@@ -233,7 +235,7 @@ sub read {
 sub read_header {
   my $self = shift;
 
-  my $bytes = sysread($self->{socket},$self->{header},READ_UNIT,length $self->{header});
+  my $bytes = sysread($self->{socket},$self->{header},READ_UNIT,length ($self->{header}||''));
   if (!defined $bytes) {
     return $self->status if $! == EWOULDBLOCK;
     return $self->status if $self->{socket}->errstr =~ /SSL wants a read/;
@@ -316,9 +318,11 @@ sub format_request {
   my $args    = $self->format_args;
   my $path    = $self->path;
   my $auth    = $self->auth;
+  my $host    = $self->host;
 
-  my @additional_headers = ('User-agent' => join('/',__PACKAGE__,$VERSION));
-  push @additional_headers, ('Authorization'  => "Basic $auth") if $auth;
+  my @additional_headers = ('User-agent' => join('/',__PACKAGE__,$VERSION),
+			    'Host'       => $host);
+  push @additional_headers, ('Authorization' => "Basic $auth") if $auth;
   push @additional_headers,('Content-length' => length $args,
 			    'Content-type'   => 'application/x-www-form-urlencoded')
     if $args && $method eq 'POST';
@@ -345,6 +349,8 @@ sub format_args {
       push @args,"$key=$_" foreach (grep {$_ ne ''} @values);
     }
   }
+
+  #print STDERR "ARGS: ",join (';',@args) , "\n"; 
   return join ';',@args;
 }
 

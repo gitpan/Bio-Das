@@ -1,5 +1,5 @@
 package Bio::Das::Request::Dsn;
-# $Id: Dsn.pm,v 1.1 2001/11/19 20:26:35 lstein Exp $
+# $Id: Dsn.pm,v 1.2 2003/05/22 19:46:55 avc Exp $
 # this module issues and parses the dsn command, with no arguments
 
 use strict;

@@ -5,18 +5,21 @@ use vars qw($VERSION @ISA);
 use overload '""' => 'toString',
              cmp  => '_cmp';
 
+use Bio::Root::Root;
 use Bio::Das::Util;  # for rearrange
 
 # we follow the SeqFeatureI interface but don't actually need
 # to load it.
-# @ISA = qw(Bio::Das::Segment Bio::SeqFeatureI);
+use Bio::SeqFeatureI;
+@ISA = qw(Bio::Root::Root Bio::SeqFeatureI);
 $VERSION = '0.01';
 
 # aliases for Ace::Sequence::Feature compatibility
-*subtype  = \&method;
-*segments = \&sub_seqFeature;
-*info     = \&label;
-*end      = \&stop;
+*subtype   = \&method;
+*segments  = *sub_seqFeature = \&get_SeqFeatures;
+*info      = *display_name   = \&label;
+*seq_id    = \&refseq;
+*make_link = \&link;
 
 sub new {
   my $class = shift;
@@ -24,8 +27,24 @@ sub new {
   return bless { segment => $segment,
 		 id     => $id,
 		 start  => $start,
-		 stop   => $stop
+		 stop   => $stop,
 	       },$class;
+}
+
+sub clone {
+  my $self = shift;
+  my %new  = %$self;
+  my $clone =  bless \%new,ref $self;
+  if (ref(my $t = $clone->type)) {
+    my $type = $t->can('clone') ? $t->clone : bless {%$t},ref $t;
+    $clone->type($type);
+  }
+
+  if (ref(my $g = $clone->group)) {
+    my $group = $g->can('clone') ? $g->clone : bless {%$g},ref $g;
+    $clone->group($group);
+  }
+  $clone;
 }
 
 sub segment {
@@ -77,11 +96,26 @@ sub target {
   my $d = $self->{target};
   if (@_) {
     my ($id,$start,$stop) = @_;
-    $self->{target} = [$id,$start,$stop];
+    $self->{target} = [ $id,$start,$stop ];
   }
   return unless $d;
   return wantarray ? @$d        # (id,start,stop,label) in list context
-                   : $d->[0];   # id in scalar context
+                   : ref($self)->new($self->segment,@$d);# a Feature object in scalar context
+}
+
+sub target_id {
+  my $self = shift;
+  return $self->{'target'}[0] if exists $self->{'target'} && ref $self->{'target'} eq 'ARRAY';
+}
+
+sub target_start {
+  my $self = shift;
+  return $self->{'target'}[1] if exists $self->{'target'} && ref $self->{'target'} eq 'ARRAY';
+}
+
+sub target_stop {
+  my $self = shift;
+  return $self->{'target'}[2] if exists $self->{'target'} && ref $self->{'target'} eq 'ARRAY';
 }
 
 sub type {
@@ -94,7 +128,7 @@ sub type {
 sub method {
   my $self = shift;
   my $type = $self->type or return;
-  $type->method;
+  $type->method(@_);
 }
 
 sub category {
@@ -134,6 +168,20 @@ sub group {
   my $self = shift;
   my $d = $self->{group};
   $self->{group} = shift if @_;
+  $d;
+}
+
+sub group_type {
+  my $self = shift;
+  my $d = $self->{group_type};
+  $self->{group_type} = shift if @_;
+  $d;
+}
+
+sub group_label {
+  my $self = shift;
+  my $d = $self->{group_label};
+  $self->{group_label} = shift if @_;
   $d;
 }
 
@@ -183,12 +231,172 @@ sub reversed {
   return shift->strand eq '-';
 }
 
-sub sub_seqFeature {
+=head2 get_SeqFeatures
+
+ Title   : get_SeqFeatures
+ Usage   : @feat = $feature->get_SeqFeatures([$method])
+ Function: get subfeatures
+ Returns : a list of Bio::DB::GFF::Feature objects
+ Args    : a feature method (optional)
+ Status  : Public
+
+This method returns a list of any subfeatures that belong to the main
+feature.  For those features that contain heterogeneous subfeatures,
+you can retrieve a subset of the subfeatures by providing a method
+name to filter on.
+
+=cut
+
+sub get_SeqFeatures {
   my $self = shift;
-  return;   # no subfeatures, by default
+  my $type = shift;
+  my $subfeat = $self->{subfeatures} or return;
+  $self->sort_features;
+  my @a;
+  if ($type) {
+    my $features = $subfeat->{lc $type} or return;
+    @a = @{$features};
+  } else {
+    @a = map {@{$_}} values %{$subfeat};
+  }
+  return @a;
+}
+
+=head2 add_subfeature
+
+ Title   : add_subfeature
+ Usage   : $feature->add_subfeature($feature)
+ Function: add a subfeature to the feature
+ Returns : nothing
+ Args    : a Bio::DB::GFF::Feature object
+ Status  : Public
+
+This method adds a new subfeature to the object.  It is used
+internally by aggregators, but is available for public use as well.
+
+=cut
+
+sub add_subfeature {
+  my $self    = shift;
+  my $feature = shift;
+  my $type = $feature->method;
+  my $subfeat = $self->{subfeatures}{lc $type} ||= [];
+  push @{$subfeat},$feature;
+}
+
+=head2 adjust_bounds
+
+ Title   : adjust_bounds
+ Usage   : $feature->adjust_bounds
+ Function: adjust the bounds of a feature
+ Returns : ($start,$stop,$strand)
+ Args    : none
+ Status  : Public
+
+This method adjusts the boundaries of the feature to enclose all its
+subfeatures.  It returns the new start, stop and strand of the
+enclosing feature.
+
+=cut
+
+# adjust a feature so that its boundaries are synched with its subparts' boundaries.
+# this works recursively, so subfeatures can contain other features
+sub adjust_bounds {
+  my $self = shift;
+  my $t = $self->{target};
+
+  if (my $subfeat = $self->{subfeatures}) {
+    for my $list (values %$subfeat) {
+      for my $feat (@$list) {
+
+	# fix up our bounds to hold largest subfeature
+	my($start,$stop,$strand) = $feat->adjust_bounds;
+	$self->{fstrand} = $strand unless defined $self->{fstrand};
+	if ($start <= $stop) {
+	  $self->{start} = $start if !defined($self->{start}) || $start < $self->{start};
+	  $self->{stop}  = $stop  if !defined($self->{stop})  || $stop  > $self->{stop};
+	} else {
+	  $self->{start} = $start if !defined($self->{start}) || $start > $self->{start};
+	  $self->{stop}  = $stop  if !defined($self->{stop})  || $stop  < $self->{stop};
+	}
+
+	# fix up endpoints of targets too
+	my $st = $feat->{target};
+	next unless $t && $st;
+	($start,$stop) = (@{$st}[1,2]);
+	if ($start < $stop) {
+	  $t->[1] = $start if !defined($t->[1]) || $start < $t->[1];  # start
+	  $t->[2] = $stop  if !defined($t->[2]) || $stop  > $t->[2];  # stop
+	} else {
+	  $t->[1] = $start if !defined($t->[1]) || $start > $t->[1];  # start
+	  $t->[2] = $stop  if !defined($t->[2]) || $stop  < $t->[2];
+	}
+      }
+    }
+  }
+
+  ($self->{start},$self->{stop},$self->strand);
+}
+
+=head2 sort_features
+
+ Title   : sort_features
+ Usage   : $feature->sort_features
+ Function: sort features
+ Returns : nothing
+ Args    : none
+ Status  : Public
+
+This method sorts subfeatures in ascending order by their start
+position.  For reverse strand features, it sorts subfeatures in
+descending order.  After this is called sub_SeqFeature will return the
+features in order.
+
+This method is called internally by merged_segments().
+
+=cut
+
+# sort features
+sub sort_features {
+  my $self = shift;
+  return if $self->{sorted}++;
+  my $strand = $self->strand or return;
+  my $subfeat = $self->{subfeatures} or return;
+  for my $type (keys %$subfeat) {
+      $subfeat->{$type} = [map { $_->[0] }
+			   sort {$a->[1] <=> $b->[1] }
+			   map { [$_,$_->start] }
+			   @{$subfeat->{$type}}] if $strand > 0;
+      $subfeat->{$type} = [map { $_->[0] }
+			   sort {$b->[1] <=> $a->[1]}
+			   map { [$_,$_->start] }
+			   @{$subfeat->{$type}}] if $strand < 0;
+  }
+}
+
+=head2 compound
+
+ Title   : compound
+ Usage   : $flag = $f->compound([$newflag])
+ Function: get or set the compound flag
+ Returns : a boolean
+ Args    : a new flag (optional)
+ Status  : Public
+
+This method gets or sets a flag indicated that the feature is not a
+primary one from the DAS server, but the result of aggregation.
+
+=cut
+
+sub compound  {
+  my $self = shift;
+  my $d    = $self->{compound};
+  $self->{compound} = shift if @_;
+  $d;
 }
 
 sub primary_tag { shift->type   }
+sub class       { shift->method }
 sub source_tag  { shift->method }
 sub has_tag     { undef         }
 sub all_tags    {

@@ -1,5 +1,5 @@
 package Bio::Das::DSN;
-# $Id: DSN.pm,v 1.3 2002/08/31 20:49:05 lstein Exp $
+# $Id: DSN.pm,v 1.4 2003/05/22 19:46:55 avc Exp $
 
 use strict;
 use overload '""'  => 'url',

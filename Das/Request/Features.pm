@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.4 2002/10/25 19:20:09 lstein Exp $
+# $Id: Features.pm,v 1.10 2003/12/10 19:47:35 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -14,27 +14,44 @@ use vars '@ISA';
 
 sub new {
   my $pack = shift;
-  my ($dsn,$segments,$types,$categories,$feature_id,$group_id,$callback) = rearrange([
-										      'dsn',
-										      ['segment','segments'],
-										      ['type','types'],
-										      ['category','categories'],
-										      'feature_id',
-										      'group_id',
-										      'callback'
-							       ],@_);
-  my $self = $pack->SUPER::new(-dsn => $dsn,
-			       -callback => $callback,
-			       -args => { segment    => $segments,
-					  category   => $categories,
-					  type       => $types,
-					  feature_id => $feature_id,
-					  group_id   => $group_id,
-					} );
+  my ($dsn,$segments,$types,$categories,$feature_id,$group_id,$das,$fcallback,$scallback) 
+    = rearrange([
+		 ['dsn','dsns'],
+		 ['segment','segments'],
+		 ['type','types'],
+		 ['category','categories'],
+		 'feature_id',
+		 'group_id',
+		 'das',
+		 ['callback','feature_callback'],
+		 'segment_callback',
+		],@_);
+  my $self = $pack->SUPER::new(
+               -dsn          => $dsn,
+	       -callback     => $fcallback,
+  	       -args => { 
+                      segment    => $segments,
+ 		      category   => $categories,
+		      type       => $types,
+		      feature_id => $feature_id,
+		      group_id   => $group_id,
+		}
+                );
+  $self->{segment_callback} = $scallback if $scallback;
+  $self->das($das) if defined $das;
   $self;
 }
 
 sub command { 'features' }
+
+sub das {
+  my $self = shift;
+  my $d    = $self->{das};
+  $self->{das} = shift if @_;
+  $d;
+}
+
+sub segment_callback { shift->{segment_callback} }
 
 sub t_DASGFF {
   my $self = shift;
@@ -53,13 +70,21 @@ sub t_SEGMENT {
   my $self = shift;
   my $attrs = shift;
   if ($attrs) {    # segment section is starting
-    $self->{tmp}{current_segment} = Bio::Das::Segment->new($attrs->{id},$attrs->{start},$attrs->{stop},$attrs->{version});
+    $self->{tmp}{current_segment} = Bio::Das::Segment->new($attrs->{id},$attrs->{start},
+							   $attrs->{stop},$attrs->{version},
+							   $self->das,$self->dsn
+							  );
     $self->{tmp}{current_feature} = undef;
     $self->{tmp}{features}        = [];
   }
 
   else {  # reached the end of the segment, so push result
-    $self->add_object($self->{tmp}{current_segment},$self->{tmp}{features}) unless $self->callback;
+    if ($self->segment_callback) {
+      eval {$self->segment_callback->($self->{tmp}{current_segment}=>$self->{tmp}{features})};
+      warn $@ if $@;
+    } else {
+      $self->add_object($self->{tmp}{current_segment},$self->{tmp}{features});
+    }
   }
 
 }
@@ -179,7 +204,11 @@ sub t_GROUP {
   my $self = shift;
   my $attrs = shift;
   my $feature = $self->{tmp}{current_feature} or return;
-  $feature->group($attrs->{id}) if $attrs;
+  if($attrs) {
+    $feature->group_label( $attrs->{label} );
+    $feature->group_type(  $attrs->{type}  );
+    $feature->group(       $attrs->{id}    );
+  }
 }
 
 sub t_LINK {
@@ -204,7 +233,11 @@ sub t_TARGET {
   my $self = shift;
   my $attrs = shift;
   my $feature = $self->{tmp}{current_feature} or return;
-  $feature->target($attrs->{id},$attrs->{start},$attrs->{stop});
+  if($attrs){ 
+    $feature->target($attrs->{id},$attrs->{start},$attrs->{stop});
+  } else {
+    $feature->target_label($self->char_data());
+  }
 }
 
 sub _cache_types {

@@ -1,7 +1,7 @@
 package Bio::Das::Parser;
 # this is the base class that implements the methods expected by
 # Bio::Das::HTTP::Fetch
-# $Id: Parser.pm,v 1.1.1.1 2001/08/19 16:01:38 lstein Exp $
+# $Id: Parser.pm,v 1.2 2003/05/22 19:46:55 avc Exp $
 
 use strict;
 use HTML::Parser;

@@ -1,5 +1,5 @@
 package Bio::Das::Request::Entry_points;
-# $Id: Entry_points.pm,v 1.1 2002/08/31 23:32:53 lstein Exp $
+# $Id: Entry_points.pm,v 1.3 2003/12/06 00:15:39 lstein Exp $
 # this module issues and parses the entry_points command, with the ref argument
 
 use strict;
@@ -44,6 +44,7 @@ sub t_SEGMENT {
   my $self  = shift;
   my $attrs = shift;
   if ($attrs) {    # segment section is starting
+    warn "in entry_points:",join ',',%$attrs;
     $self->{current_ep} = Bio::Das::Segment->new($attrs->{id},
 						 $attrs->{start}||1,
 						 $attrs->{stop}||$attrs->{size},

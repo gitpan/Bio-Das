@@ -22,7 +22,10 @@ sub id   {
 sub method {
   my $self = shift;
   my $d = $self->{method};
-  $self->{method} = shift if @_;
+  if (@_) {
+    $self->{method} = $_[0];
+    $self->{id}    =~ s/^[^:]+/$_[0]/;  # hack to allow to work with Bio::DB::GFF aggregators
+  }
   $d;
 }
 sub method_label {
@@ -64,6 +67,10 @@ sub label {
 sub toString {
   my $self = shift;
   $self->id || $self->label;
+}
+
+sub type {
+  shift->toString;
 }
 
 sub complete {

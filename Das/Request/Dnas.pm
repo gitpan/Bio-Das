@@ -1,5 +1,5 @@
 package Bio::Das::Request::Dnas;
-# $Id: Dnas.pm,v 1.2 2002/08/31 23:32:53 lstein Exp $
+# $Id: Dnas.pm,v 1.3 2003/05/22 19:46:55 avc Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;

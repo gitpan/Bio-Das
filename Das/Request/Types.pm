@@ -1,5 +1,5 @@
 package Bio::Das::Request::Types;
-# $Id: Types.pm,v 1.2 2002/08/31 23:32:53 lstein Exp $
+# $Id: Types.pm,v 1.5 2003/12/29 23:20:32 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
