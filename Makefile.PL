@@ -9,5 +9,6 @@ WriteMakefile(
 			       HTML::Parser => 3.0,
 			       LWP          => 5.0,
 			       MIME::Base64 => 2.12,
+			       Bio::Root::Root=>0,
 			      }
 	     );

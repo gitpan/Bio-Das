@@ -1,3 +1,7 @@
+2004-01-14  Lincoln Stein <lstein@cshl.edu>
+	* Added prerequisite for Bio::Root::Root (in bioperl).
+	* Added META.yml to manifest.
+
 2004-01-12  Lincoln Stein <lstein@cshl.edu>
 	* Documented Bio::Das::Map
 	
