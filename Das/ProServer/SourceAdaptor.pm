@@ -51,6 +51,8 @@ sub new {
 #
 sub init {};
 
+sub length { 0; }
+
 #########
 # mapmaster for this source. overrides configuration 'mapmaster' setting
 #

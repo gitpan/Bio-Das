@@ -1,3 +1,7 @@
+2004-07-08  Lincoln Stein <lstein@cshl.edu>
+	* Hard-code Errno constants on Windows platforms
+	* Throw exception when requested to perform non-overlaps range query.
+	
 2004-06-20  Lincoln Stein <lstein@cshl.edu>
 	* Compatibility fixes for Bio::PrimarySeqI
 	

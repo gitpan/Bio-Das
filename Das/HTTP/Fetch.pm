@@ -1,6 +1,6 @@
 package Bio::Das::HTTP::Fetch;
 # file: Fetch.pm
-# $Id: Fetch.pm,v 1.15 2004/01/03 00:23:40 lstein Exp $
+# $Id: Fetch.pm,v 1.17 2004/09/24 11:45:07 lstein Exp $
 
 =head1 NAME
 
@@ -54,6 +54,12 @@ Bio::Das::HTTP::Fetch.
 
 =cut
 
+BEGIN {
+  eval "use Errno 'EINPROGRESS','EWOULDBLOCK'";
+  unless (defined &EINPROGRESS) {
+    eval "use constant EINPROGRESS => 115; use constant EWOULDBLOCK => 11";
+  }
+}
 
 use strict;
 use IO::Socket qw(:DEFAULT :crlf);
@@ -61,7 +67,6 @@ use Bio::Das::Util;
 use Bio::Das::Request;
 use MIME::Base64;  # For HTTP authenication encoding
 use Carp 'croak';
-use Errno 'EINPROGRESS','EWOULDBLOCK';
 use vars '$VERSION';
 
 $VERSION = '1.11';

@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.36 2004/06/21 03:11:37 lstein Exp $
+# $Id: Das.pm,v 1.39 2005/01/26 22:36:12 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -24,7 +24,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = 0.99;
+$VERSION = '1.00';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -276,7 +276,7 @@ sub types {
 								   ],@_);
   $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
-  my @dsn = ref $dsn ? @$dsn : $dsn;
+  my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
   my @request;
   for my $dsn (@dsn) {
     push @request,Bio::Das::Request::Types->new(-dsn        => $dsn,
@@ -365,7 +365,7 @@ sub refclass { 'Segment' }
 sub features {
   my $self = shift;
   my ($dsn,$segments,$types,$categories,
-      $fcallback,$scallback,$feature_id,$group_id,$iterator) 
+      $fcallback,$scallback,$feature_id,$group_id,$iterator,$rangetype)
                                  = rearrange([['dsn','dsns'],
 			                      ['segment','segments'],
 					      ['type','types'],
@@ -375,10 +375,15 @@ sub features {
                                               'feature_id',
                                               'group_id',
 					      'iterator',
+					      'rangetype',
 					     ],@_);
 
   croak "must provide -dsn argument" unless $dsn;
   my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
+
+  $rangetype ||= 'overlaps';
+  $self->throw('DAS/1 only supports range queries of type "overlaps"')
+    unless $rangetype eq 'overlaps';
 
   # handle types
   my @aggregators;
