@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.32 2004/02/25 17:24:47 lstein Exp $
+# $Id: Das.pm,v 1.33 2004/02/27 13:37:43 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -24,7 +24,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = 0.96;
+$VERSION = 0.961;
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);

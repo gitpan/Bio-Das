@@ -68,6 +68,8 @@ sub stop {
   $d;
 }
 
+sub length {my $self = shift; $self->stop-$self->start+1}
+
 sub refseq { shift->segment->refseq }
 
 sub id {
