@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.13 2004/06/21 03:11:37 lstein Exp $
+# $Id: Segment.pm,v 1.16 2005/08/24 16:10:11 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -74,6 +74,15 @@ sub autocategories {
   my $d  = $self->{autocategories};
   $self->{autocategories} = shift if @_;
   $d;
+}
+
+sub sequence {
+  my $self = shift;
+  my $das = $self->das;
+  my $dsn = $self->dsn;
+  return $das->sequence(@_,
+		   -dsn    => $dsn,
+		   -segment=> [$self->asString]);
 }
 
 sub dna {
@@ -214,10 +223,12 @@ sub render {
 
   my $stylesheet = $self->das->stylesheet;
   my @override = $options && CORE::ref($options) eq 'HASH' ? %$options : ();
+  my @new_tracks;
 
   my (%type_count,%tracks,$color);
   for my $feature ($self->features) {
     my $type = $feature->type;
+
 
     $type_count{$type}++;
     if (my $track = $tracks{$type}) {
@@ -236,9 +247,9 @@ sub render {
 		 );
 
     if (defined($position_to_insert)) {
-      $tracks{$type} = $panel->insert_track($position_to_insert++,$feature,@config);
+      push @new_tracks,($tracks{$type} = $panel->insert_track($position_to_insert++,$feature,@config));
     } else {
-      $tracks{$type} = $panel->add_track($feature,@config);
+      push @new_tracks,($tracks{$type} = $panel->add_track($feature,@config));
     }
   }
 
@@ -263,7 +274,7 @@ sub render {
 		      -label => $do_label);
   }
   my $track_count = keys %tracks;
-  return wantarray ? ($track_count,$panel) : $track_count;
+  return wantarray ? ($track_count,$panel,\@new_tracks) : $track_count;
 }
 
 1;

@@ -40,7 +40,7 @@ sub new {
 		'adaptors' => {},
 	       };
   ($inifile) = $inifile =~ /([a-zA-Z0-9_\/\.\-]+)/;
-  
+
   if($inifile && -f $inifile) {
     my $conf = Config::IniFiles->new(
 				     -file => $inifile,
@@ -48,11 +48,11 @@ sub new {
     #########
     # load general parameters
     #
-    for my $f (qw(hostname interface prefork maxclients pidfile port ensemblhome oraclehome bioperlhome http_proxy)) {
+    for my $f (qw(hostname interface prefork maxclients pidfile logfile port ensemblhome oraclehome bioperlhome http_proxy)) {
       $self->{$f} = $conf->val("general", $f) if($conf->val("general", $f));
-	print STDERR qq(**** $f => $self->{$f} ****\n);
+	printf STDERR qq(**** %s => %s ****\n), $f, ($self->{$f}||"");
     }
-    
+
     #########
     # build the adaptors substructure
     #
@@ -90,8 +90,14 @@ sub maxclients {
 
 sub pidfile {
   my $self = shift;
-  ($self->{'pidfile'}) = $self->{'pidfile'} =~ /([a-zA-Z0-9\/\-_\.]+)/;
+  ($self->{'pidfile'}) = ($self->{'pidfile'}||"") =~ /([a-zA-Z0-9\/\-_\.]+)/;
   return $self->{'pidfile'};
+}
+
+sub logfile {
+  my $self = shift;
+  ($self->{'logfile'}) = ($self->{'logfile'}||"") =~ /([a-zA-Z0-9\/\-_\.]+)/;
+  return $self->{'logfile'};
 }
 
 sub host {
@@ -105,17 +111,16 @@ sub host {
 # build all known SourceAdaptors (including those Hydra-based)
 #
 sub adaptors {
-  my $self = shift;
-  
+  my $self     = shift;
   my @adaptors = ();
-  
+
   for my $dsn (grep { ($self->{'adaptors'}->{$_}->{'state'} || "off") eq "on"; } keys %{$self->{'adaptors'}}) {
     if(substr($dsn, 0, 5) eq "hydra") {
       for my $managed_source ($self->hydra($dsn)->sources()) {
 	my $adaptor = $self->_hydra_adaptor($dsn, $managed_source);
 	push @adaptors, $adaptor if($adaptor);
       }
-    
+
     } else {
       push @adaptors, $self->adaptor($dsn);
     }
@@ -231,12 +236,12 @@ sub _hydra_adaptor {
   return unless($self->{'adaptors'}->{$hydraname}->{'state'} eq "on");
   my $config = $self->{'adaptors'}->{$hydraname};
   my $hydra  = $self->hydra($hydraname);
-  
+
   return unless( grep { $_ eq $dsn } $hydra->sources());
-  
+
   my $adaptortype = "Bio::Das::ProServer::SourceAdaptor::".$self->{'adaptors'}->{$hydraname}->{'adaptor'};
   eval "require $adaptortype";
-  
+
   if($@) {
     warn $@;
     return;
@@ -268,7 +273,7 @@ sub hydra {
       warn $@;
       return;
     }
-    
+
     $self->{'adaptors'}->{$hydraname}->{'_hydra'}  ||= $hydraimpl->new({
 									'dsn'    => $hydraname,
 									'config' => $self->{'adaptors'}->{$hydraname},

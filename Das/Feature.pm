@@ -258,22 +258,6 @@ sub seq {
   $dna;
 }
 
-=head2 get_SeqFeatures
-
- Title   : get_SeqFeatures
- Usage   : @feat = $feature->get_SeqFeatures([$method])
- Function: get subfeatures
- Returns : a list of Bio::DB::GFF::Feature objects
- Args    : a feature method (optional)
- Status  : Public
-
-This method returns a list of any subfeatures that belong to the main
-feature.  For those features that contain heterogeneous subfeatures,
-you can retrieve a subset of the subfeatures by providing a method
-name to filter on.
-
-=cut
-
 sub get_SeqFeatures {
   my $self = shift;
   my $type = shift;
@@ -289,20 +273,6 @@ sub get_SeqFeatures {
   return @a;
 }
 
-=head2 add_subfeature
-
- Title   : add_subfeature
- Usage   : $feature->add_subfeature($feature)
- Function: add a subfeature to the feature
- Returns : nothing
- Args    : a Bio::DB::GFF::Feature object
- Status  : Public
-
-This method adds a new subfeature to the object.  It is used
-internally by aggregators, but is available for public use as well.
-
-=cut
-
 sub add_subfeature {
   my $self    = shift;
   my $feature = shift;
@@ -310,21 +280,6 @@ sub add_subfeature {
   my $subfeat = $self->{subfeatures}{lc $type} ||= [];
   push @{$subfeat},$feature;
 }
-
-=head2 adjust_bounds
-
- Title   : adjust_bounds
- Usage   : $feature->adjust_bounds
- Function: adjust the bounds of a feature
- Returns : ($start,$stop,$strand)
- Args    : none
- Status  : Public
-
-This method adjusts the boundaries of the feature to enclose all its
-subfeatures.  It returns the new start, stop and strand of the
-enclosing feature.
-
-=cut
 
 # adjust a feature so that its boundaries are synched with its subparts' boundaries.
 # this works recursively, so subfeatures can contain other features
@@ -365,24 +320,6 @@ sub adjust_bounds {
   ($self->{start},$self->{stop},$self->strand);
 }
 
-=head2 sort_features
-
- Title   : sort_features
- Usage   : $feature->sort_features
- Function: sort features
- Returns : nothing
- Args    : none
- Status  : Public
-
-This method sorts subfeatures in ascending order by their start
-position.  For reverse strand features, it sorts subfeatures in
-descending order.  After this is called sub_SeqFeature will return the
-features in order.
-
-This method is called internally by merged_segments().
-
-=cut
-
 # sort features
 sub sort_features {
   my $self = shift;
@@ -400,20 +337,6 @@ sub sort_features {
 			   @{$subfeat->{$type}}] if $strand < 0;
   }
 }
-
-=head2 compound
-
- Title   : compound
- Usage   : $flag = $f->compound([$newflag])
- Function: get or set the compound flag
- Returns : a boolean
- Args    : a new flag (optional)
- Status  : Public
-
-This method gets or sets a flag indicated that the feature is not a
-primary one from the DAS server, but the result of aggregation.
-
-=cut
 
 sub compound  {
   my $self = shift;
@@ -655,6 +578,85 @@ group).
 
 In addition to the methods listed above, Bio::Das::Segment::Feature
 implements all the methods required for the Bio::SeqFeatureI class.
+
+=head2 get_SeqFeatures
+
+ Title   : get_SeqFeatures
+ Usage   : @feat = $feature->get_SeqFeatures([$method])
+ Function: get subfeatures
+ Returns : a list of Bio::DB::GFF::Feature objects
+ Args    : a feature method (optional)
+ Status  : Public
+
+This method returns a list of any subfeatures that belong to the main
+feature.  For those features that contain heterogeneous subfeatures,
+you can retrieve a subset of the subfeatures by providing a method
+name to filter on.
+
+=cut
+
+=head2 add_subfeature
+
+ Title   : add_subfeature
+ Usage   : $feature->add_subfeature($feature)
+ Function: add a subfeature to the feature
+ Returns : nothing
+ Args    : a Bio::DB::GFF::Feature object
+ Status  : Public
+
+This method adds a new subfeature to the object.  It is used
+internally by aggregators, but is available for public use as well.
+
+=cut
+
+=head2 adjust_bounds
+
+ Title   : adjust_bounds
+ Usage   : $feature->adjust_bounds
+ Function: adjust the bounds of a feature
+ Returns : ($start,$stop,$strand)
+ Args    : none
+ Status  : Public
+
+This method adjusts the boundaries of the feature to enclose all its
+subfeatures.  It returns the new start, stop and strand of the
+enclosing feature.
+
+=cut
+
+=head2 sort_features
+
+ Title   : sort_features
+ Usage   : $feature->sort_features
+ Function: sort features
+ Returns : nothing
+ Args    : none
+ Status  : Public
+
+This method sorts subfeatures in ascending order by their start
+position.  For reverse strand features, it sorts subfeatures in
+descending order.  After this is called sub_SeqFeature will return the
+features in order.
+
+This method is called internally by merged_segments().
+
+=cut
+
+=head2 compound
+
+ Title   : compound
+ Usage   : $flag = $f->compound([$newflag])
+ Function: get or set the compound flag
+ Returns : a boolean
+ Args    : a new flag (optional)
+ Status  : Public
+
+This method gets or sets a flag indicated that the feature is not a
+primary one from the DAS server, but the result of aggregation.
+
+=cut
+
+
 
 =head2 STRING OVERLOADING
 

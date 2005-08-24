@@ -42,6 +42,7 @@ Das/Request/Dsn.pm
 Das/Request/Entry_points.pm
 Das/Request/Feature2Segments.pm
 Das/Request/Features.pm
+Das/Request/Sequences.pm
 Das/Request/Stylesheet.pm
 Das/Request/Types.pm
 Das/Segment.pm

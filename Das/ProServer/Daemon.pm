@@ -2,9 +2,9 @@ package Bio::Das::ProServer::Daemon;
 
 =head1 AUTHOR
 
-Tony Cox <avc@sanger.ac.uk>.
-
 Roger Pettett <rmp@sanger.ac.uk>.
+
+Tony Cox <avc@sanger.ac.uk>.
 
 Copyright (c) 2003 The Sanger Institute
 
@@ -185,10 +185,10 @@ sub make_new_child {
 
       my $path   = $url->path();
       $self->log("Request: $path");
-      $path      =~ /das\/(.*?)\/(.*)/;
+      $path      =~ m|das/([^/]+)(.*)|;
       my $dsn    = $1 || "";
       my $method = $2 || "";
-      $method    =~ s/^(.*?)\//$1/;
+      ($method)  = $method =~ m|([a-z_]+)|i;
 
       if ($req->header('Accept-Encoding') && ($req->header('Accept-Encoding') =~ /gzip/) ) {
 	$self->use_gzip(1);
@@ -219,15 +219,21 @@ sub make_new_child {
 
 	  if($method eq "features") {
 	    $content .= $self->do_feature_request($res, $dsn, $cgi);
+
 	  } elsif ($method eq "stylesheet") {
 	    $content .= $self->do_stylesheet_request($res, $dsn);
+
 	  } elsif($method eq "dna") {
 	    $content .= $self->do_dna_request($res, $dsn, $cgi);
+
 	  } elsif($method eq "entry_points") {
 	    $content .= $self->do_entry_points_request($res, $dsn, $cgi);
+
 	  } elsif($method eq "types") {
 	    $content .= $self->do_types_request($res, $dsn, $cgi);
 	  }
+	} elsif (!$method) {
+	  $content .= $self->do_homepage_request($res, $dsn, $cgi);
 
 	} else {
 	  $c->send_error("501", "Unimplemented feature");
@@ -368,6 +374,20 @@ sub do_stylesheet_request {
   my $adaptor = $self->adaptor($dsn);
   my $content = $adaptor->das_stylesheet();
   $self->header($res, $adaptor);
+
+  return $content;
+}
+
+#########
+# Non-standard source information/homepage
+#
+sub do_homepage_request {
+  my ($self, $res, $dsn) = @_;
+
+  my $adaptor = $self->adaptor($dsn);
+  my $content = $adaptor->das_homepage();
+  $res->code("200 OK");
+  $res->header("Content-Type" => "text/html");
 
   return $content;
 }

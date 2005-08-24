@@ -98,9 +98,15 @@ sub complete {
 # type and method
 sub _key {
   my $self = shift;
+  local $^W=0;
   my @k = $self->{id};
-  push @k,$self->{method}    if defined $self->{method};
-  push @k,$self->{reference} if defined $self->{reference};
+  push @k,$self->{method}          if exists $self->{method};
+  push @k,$self->{reference}       if exists $self->{reference};
+  push @k,$self->{category}        if exists $self->{category};
+  push @k,$self->{has_subparts}    if exists $self->{has_subparts};
+  push @k,$self->{has_superparts}  if exists $self->{has_subparts};
+  push @k,$self->{method_label}    if exists $self->{method_label};
+  push @k,$self->{count}           if exists $self->{count};
   join ':',@k;
 }
 

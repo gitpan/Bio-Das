@@ -1,3 +1,9 @@
+2005-08-24  Lincoln Stein  <lstein@cshl.edu>
+	* Minor tweak to API to work more nicely with gbrowse.
+
+2005-04-20  Lincoln Stein  <lstein@cshl.edu>
+	* Added support for arbitrary sequence retrieval contributed by Andreas Kahari
+
 2004-07-08  Lincoln Stein <lstein@cshl.edu>
 	* Hard-code Errno constants on Windows platforms
 	* Throw exception when requested to perform non-overlaps range query.

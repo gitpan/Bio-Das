@@ -1,12 +1,12 @@
 #!/usr/local/bin/perl -wT
 #########
 # ProServer DAS Server
-# Author: rmp
-# Maintainer: rmp
-# Created: 2003-05-22
-# Last Modified: 2003-06-12
+# Author:        rmp
+# Maintainer:    rmp
+# Created:       2003-05-22
+# Last Modified: 2005-05-11 # logfile config patch from ak
 #
-use lib qw(./blib/lib ../blib/lib .);
+use lib qw(./blib/lib ../blib/lib . ..);
 package proserver;
 
 =head1 AUTHOR
@@ -30,6 +30,8 @@ use Bio::Das::ProServer::Daemon;
 use Bio::Das::ProServer::Config;
 use Bio::Das::ProServer::Loader::agp;
 use Getopt::Long;
+use POSIX;
+use Sys::Hostname;
 
 $ENV{'PATH'} = "/bin";
 my %opts   = ();
@@ -49,14 +51,41 @@ my $result = GetOptions(
 			'dbport:i'     => \$opts{'dbport'},
 			'help|?'       => \$opts{'usage'},
 			'c|config:s'   => \$opts{'inifile'},
+			'x'            => \$opts{'X'}
 		       );
 
 print STDERR qq(##########################################################
 #  Starting ProServer Daemon (c) GRL 2004...             #
 #  http://www.sanger.ac.uk/Software/analysis/proserver/  #
 ##########################################################\n);
-@ARGV = @saveargv;
+@ARGV      = @saveargv;
 my $config = Bio::Das::ProServer::Config->new($opts{'inifile'});
+
+if(!$opts{'X'} && fork()) {
+  print STDERR qq(Parent process detached...\n);
+  exit;
+
+}
+
+POSIX::setsid() or die "Can't setsid";
+
+my $logfile = $config->logfile();
+if (!defined $logfile) {
+  my ($pidpath)  = ($config->pidfile()   ||"") =~ /^(.*)\//;
+  my ($confpath) = ($config->{'inifile'} ||"") =~ /^(.*)\//;
+  $pidpath     ||= $confpath;
+  $pidpath      .= $pidpath?"/":"";
+  $logfile       = sprintf("%sproserver.%s.log", $pidpath, &hostname());
+}
+
+print STDERR qq(Logging to $logfile\n);
+
+open STDIN,  '</dev/null' or die "Can't open STDIN from /dev/null: [$!]\n";
+#  open STDOUT, '>/dev/null' or die "Can't open STDOUT to /dev/null: [$!]\n";
+open STDOUT, ">$logfile" or die "Can't open STDOUT to /dev/null: [$!]\n";
+open STDERR, '>&STDOUT'   or die "Can't open STDERR to STDOUT: [$!]\n";
+
+
 
 $config->{'port'}     = $opts{'port'}            if(defined $opts{'port'});
 $config->{'hostname'} = $opts{'hostname'}        if(defined $opts{'hostname'});

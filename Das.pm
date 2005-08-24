@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.39 2005/01/26 22:36:12 lstein Exp $
+# $Id: Das.pm,v 1.42 2005/08/24 15:16:59 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -8,6 +8,7 @@ use Bio::Root::Root;
 use Bio::Das::HTTP::Fetch;
 use Bio::Das::TypeHandler;     # bring in the handler for feature type ontologies
 use Bio::Das::Request::Dsn;    # bring in dsn  parser
+use Bio::Das::Request::Sequences;   # bring in sequence  parser
 use Bio::Das::Request::Types;  # bring in type parser
 use Bio::Das::Request::Dnas;
 use Bio::Das::Request::Features;
@@ -24,7 +25,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = '1.00';
+$VERSION = '1.02';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -285,6 +286,25 @@ sub types {
 						-enumerate   =>$enumerate,
 						-callback    => $callback,
 					       );
+  }
+  $self->run_requests(\@request);
+}
+
+# call with list of DSN objects, and a list of one or more segments
+sub sequence {
+  my $self = shift;
+  my ($dsn,$segments,$callback) = rearrange([['dsn','dsns'],
+					     ['segment','segments'],
+					     'callback',
+					    ],@_);
+  $dsn ||= $self->default_url;
+  croak "must provide -dsn argument" unless $dsn;
+  my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
+  my @request;
+  for my $dsn (@dsn) {
+    push @request,Bio::Das::Request::Sequences->new(-dsn        => $dsn,
+					       -segment    => $segments,
+					       -callback    => $callback);
   }
   $self->run_requests(\@request);
 }
