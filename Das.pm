@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.42 2005/08/24 15:16:59 lstein Exp $
+# $Id: Das.pm,v 1.43 2006/09/15 11:09:15 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -25,7 +25,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = 'Bio::Root::Root';
-$VERSION = '1.02';
+$VERSION = '1.03';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -34,20 +34,21 @@ sub new {
   my $package = shift;
 
   # compatibility with 0.18 API
-  my ($timeout,$auth_callback,$url,$dsn,$oldstyle_api,$aggregators,$autotypes,$autocategories);
+  my ($timeout,$auth_callback,$url,$dsn,$oldstyle_api,$aggregators,$autotypes,$autocategories,$proxy);
   my @p = @_;
 
   if (@p >= 1 && $p[0] =~ /^http/) {
     ($url,$dsn,$aggregators) = @p;
   } elsif ($p[0] =~ /^-/) {  # named arguments
-    ($url,$dsn,$aggregators,$timeout,$auth_callback,$autotypes,$autocategories) 
+    ($url,$dsn,$aggregators,$timeout,$auth_callback,$autotypes,$autocategories,$proxy)
       = rearrange([['source','server'],
 		   'dsn',
 		   ['aggregators','aggregator'],
 		   'timeout',
 		   'auth_callback',
 		   'types',
-		   'categories'
+		   'categories',
+		   'proxy',
 		  ],
 		  @p);
   } else {
@@ -66,6 +67,7 @@ sub new {
 		    autotypes      => $autotypes,
 		    autocategories => $autocategories,
 	       },$package;
+  $self->proxy($proxy) if $proxy;
   $self->auth_callback($auth_callback) if defined $auth_callback;
   if ($aggregators) {
     my @a = ref($aggregators) eq 'ARRAY' ? @$aggregators : $aggregators;
@@ -740,6 +742,9 @@ select the data source to use (e.g. "elegans") by passing the B<-dsn>
 argument. B<-aggregators> is a list of aggregators as described
 earlier.
 
+The optional B<-proxy> argument will initialize the Bio::Das object
+with an HTTP or HTTPS proxy (see also the proxy() method below).
+
 =item $das = Bio::Das->new('http://das.server/cgi-bin/das',$dsn,$aggregators)
 
 Shortcut for the above.
@@ -765,6 +770,9 @@ Aggregators are used to build multilevel hierarchies out of the raw
 features in the DAS stream.  For a description of aggregators, see
 L<Bio::DB::GFF>, which uses exactly the same aggregator system as
 Bio::Das.
+
+The optional B<-proxy> argument will initialize the Bio::Das object
+with an HTTP or HTTPS proxy (see also the proxy() method below).
 
 If successful, this method returns a Bio::Das object.
 

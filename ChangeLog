@@ -1,3 +1,6 @@
+2006-09-15  Lincoln Stein  <lstein@cshl.org>
+	* Added support for proxies at init time.
+
 2005-08-24  Lincoln Stein  <lstein@cshl.edu>
 	* Minor tweak to API to work more nicely with gbrowse.
 
