@@ -1,15 +1,16 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.43 2006/09/15 11:09:15 lstein Exp $
+# $Id: Das.pm,v 1.44 2007/09/06 08:48:05 lstein Exp $
 
 # prototype parallel-fetching Das
 
 use strict;
 use Bio::Root::Root;
+use Bio::DasI;
 use Bio::Das::HTTP::Fetch;
-use Bio::Das::TypeHandler;     # bring in the handler for feature type ontologies
-use Bio::Das::Request::Dsn;    # bring in dsn  parser
+use Bio::Das::TypeHandler;          # bring in the handler for feature type ontologies
+use Bio::Das::Request::Dsn;         # bring in dsn  parser
 use Bio::Das::Request::Sequences;   # bring in sequence  parser
-use Bio::Das::Request::Types;  # bring in type parser
+use Bio::Das::Request::Types;       # bring in type parser
 use Bio::Das::Request::Dnas;
 use Bio::Das::Request::Features;
 use Bio::Das::Request::Feature2Segments;
@@ -24,8 +25,8 @@ use IO::Select;
 
 use vars '$VERSION';
 use vars '@ISA';
-@ISA     = 'Bio::Root::Root';
-$VERSION = '1.03';
+@ISA     = ('Bio::Root::Root','Bio::DasI');
+$VERSION = '1.05';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -409,13 +410,25 @@ sub features {
 
   # handle types
   my @aggregators;
-  my $typehandler = Bio::Das::TypeHandler->new;
-  my $typearray   = $typehandler->parse_types($types);
+  my $typehandler   = Bio::Das::TypeHandler->new;
+  my $typearray     = $typehandler->parse_types($types);
+  my @typearray_sav = @$typearray;
   for my $a ($self->aggregators) {
     unshift @aggregators,$a if $a->disaggregate($typearray,$typehandler);
   }
 
-  my @types = map {defined $_->[1] ? "$_->[0]:$_->[1]" : $_->[0]} @$typearray;
+  # change to gbrowse das server requires us to send the aggregator names,
+  # rather than the disaggregated components. We send both.
+  my %aggregator_methods = map {$_->method => 1} @aggregators;
+  my @aggregator_types;
+  for my $type (@typearray_sav) {
+    next unless $aggregator_methods{$type->[0]};
+    push @aggregator_types,[$type->[0],$type->[1]];
+  }
+
+  my %seen;
+  my @types = grep {!$seen{$_}++} map {defined $_->[1] ? "$_->[0]:$_->[1]" : $_->[0]} (@$typearray,@aggregator_types);
+
   my @request;
   for my $dsn (@dsn) {
     push @request,Bio::Das::Request::Features->new(

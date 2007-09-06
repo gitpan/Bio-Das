@@ -12,7 +12,7 @@ use Bio::Das::Util;  # for rearrange
 # to load it.
 use Bio::SeqFeatureI;
 @ISA = qw(Bio::Root::Root Bio::SeqFeatureI Bio::PrimarySeqI);
-$VERSION = '0.90';
+$VERSION = '0.91';
 
 # aliases for Ace::Sequence::Feature compatibility
 *subtype   = \&method;
@@ -93,6 +93,40 @@ sub notes {
   @{$self->{note}};
 }
 
+sub attributes {
+  my $self = shift;
+  if (@_) {
+    return $self->each_tag_value(@_);
+  } else {
+    return $self->{attributes} ? %{$self->{attributes}} : ();
+  }
+}
+
+sub all_tags {
+  my $self = shift;
+  return keys %{$self->{attributes}};
+}
+
+sub add_tag_value {
+  my $self = shift;
+  my ($tag_name,@tag_values) = @_;
+  push @{$self->{attributes}{$tag_name}},@tag_values;
+}
+
+sub remove_tag {
+  my $self = shift;
+  my $tag_name = shift;
+  delete $self->{attributes}{$tag_name};
+}
+
+sub each_tag_value {
+  my $self = shift;
+  my $tag  = shift;
+  my $value = $self->{attributes}{$tag} or return;
+  return CORE::ref $value ? @{$self->{attributes}{$tag}}
+                          : $self->{attributes}{$tag};
+}
+
 sub note {
   my $self = shift;
   my $d = $self->{note};
@@ -102,7 +136,12 @@ sub note {
 
 sub add_note {
   my $self = shift;
-  push @{$self->{note}},shift;
+  my ($tag,$value) = @_;
+  if (defined $tag) {
+    push @{$self->{attributes}{$tag}},$value;
+  } else {
+    push @{$self->{note}},$value;
+  }
 }
 
 sub target {
@@ -539,6 +578,15 @@ the link.
 =item $note = $feature->note([$newnote])
 
 Get or set the human-readable note associated with the feature.
+
+=item $feature->each_tag_value()
+=item $feature->all_tags()
+=item $feature->add_tag_value()
+=item $feature->remove_tag()
+=item $feature->attributes()
+
+The tag* methods work just like they do in Bio::SeqFeatureI. The
+attributes() method follows the conventions in Bio::DB::SeqFeature.
 
 =item $target = $feature->target
 

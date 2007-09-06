@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.12 2004/02/21 22:27:57 lstein Exp $
+# $Id: Features.pm,v 1.13 2007/09/06 10:20:42 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -254,7 +254,11 @@ sub t_NOTE {
   my $self = shift;
   my $attrs = shift;
   my $feature = $self->{tmp}{current_feature} or return;
-  $feature->add_note($self->char_data) unless $attrs;
+  if ($attrs) {
+    $self->{tmp}{note_tag} = $attrs->{tag} if exists $attrs->{tag};
+  } else {
+    $feature->add_note($self->{tmp}{note_tag},$self->char_data);
+  }
 }
 
 sub t_TARGET {

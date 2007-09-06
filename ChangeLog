@@ -1,3 +1,11 @@
+2007-09-06  Lincoln Stein  <lstein@cshl.org> (version 1.05)
+	* When aggregators are in use, the features request now fetches
+	  both aggregator component and aggregator method name.
+	  This fixes an ambiguity in how such composite features should be handled by
+	  the server.
+	* The note parsing functionality now accepts TYPED notes: <NOTE tag="dbxref">www.jax.org</NOTE>.
+	  These get turned into bioperl-style tags, which in turn can be read using each_tag_value(), etc.
+
 2006-09-15  Lincoln Stein  <lstein@cshl.org>
 	* Added support for proxies at init time.
 
