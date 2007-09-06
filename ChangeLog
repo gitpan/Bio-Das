@@ -1,3 +1,6 @@
+2007-09-06  Lincoln Stein  <lstein@cshl.org> (version 1.06)
+	* Quenched "redefined subroutine" warning.
+
 2007-09-06  Lincoln Stein  <lstein@cshl.org> (version 1.05)
 	* When aggregators are in use, the features request now fetches
 	  both aggregator component and aggregator method name.

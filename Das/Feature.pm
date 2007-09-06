@@ -102,6 +102,12 @@ sub attributes {
   }
 }
 
+sub has_tag     {
+  my $self = shift;
+  my $tag = shift;
+  return exists $self->{attributes}{$tag};
+}
+
 sub all_tags {
   my $self = shift;
   return keys %{$self->{attributes}};
@@ -391,11 +397,6 @@ sub source      {
   my $type = shift->type;
   my ($method,$source) = split ':',$type;
   return $source;
-}
-sub has_tag     { undef         }
-sub all_tags    {
-  my $self = shift;
-  return ($self->primary_tag,$self->source_tag);
 }
 sub gff_string {
   my $self = shift;
