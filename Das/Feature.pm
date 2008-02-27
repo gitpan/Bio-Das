@@ -7,11 +7,14 @@ use overload '""' => 'toString',
 
 use Bio::Root::Root;
 use Bio::Das::Util;  # for rearrange
+use Bio::LocationI;
 
 # we follow the SeqFeatureI interface but don't actually need
 # to load it.
 use Bio::SeqFeatureI;
-@ISA = qw(Bio::Root::Root Bio::SeqFeatureI Bio::PrimarySeqI);
+
+@ISA = qw(Bio::Root::Root Bio::SeqFeatureI Bio::PrimarySeqI Bio::LocationI);
+
 $VERSION = '0.91';
 
 # aliases for Ace::Sequence::Feature compatibility
@@ -419,6 +422,59 @@ sub _cmp {
   my $a = $self->toString;
   ($a,$b) = ($b,$a) if $reversed;
   $a cmp $b;
+}
+
+sub is_remote {
+  1;
+}
+
+sub location {
+  my $self = shift;
+  require Bio::Location::Split unless Bio::Location::Split->can('new');
+  my $location;
+  if (my @segments = $self->segments) {
+    $location = Bio::Location::Split->new();
+    foreach (@segments) {
+      $location->add_sub_Location($_);
+    }
+  } else {
+    $location = $self;
+  }
+  $location;
+}
+
+sub each_Location {
+  my $self = shift;
+  require Bio::Location::Simple unless Bio::Location::Simple->can('new');
+  if (my @segments = $self->segments) {
+    return map {
+    Bio::Location::Simple->new(-start  => $_->start,
+                                   -end    => $_->end,
+                              -strand => $_->strand);
+    } @segments;
+  } else {
+    return Bio::Location::Simple->new(-start  => $self->start,
+                                      -end    => $self->end,
+                                      -strand => $self->strand);
+  }
+}
+
+sub location_string {
+  my $self = shift;
+  my @segments = $self->segments or return $self->to_FTstring;
+  join ',',map {$_->to_FTstring} @segments;
+}
+
+sub coordinate_policy {
+  require Bio::Location::WidestCoordPolicy unless Bio::Location::WidestCoordPolicy->can('new');
+  return Bio::Location::WidestCoordPolicy->new();
+}
+
+sub name            {
+  my $self = shift;
+  my $d    = $self->{name};
+  $self->{name} = shift if @_;
+  $d;
 }
 
 1;

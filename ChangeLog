@@ -1,3 +1,6 @@
+2008-02-27  Lincoln Stein  <lstein@cshl.org> (version 1.07)
+	* Support LocationI interface, to prevent clashes with recent bioperl.
+
 2007-09-06  Lincoln Stein  <lstein@cshl.org> (version 1.06)
 	* Quenched "redefined subroutine" warning.
 
