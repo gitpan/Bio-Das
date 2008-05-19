@@ -1,3 +1,6 @@
+2008-05-19    Lincoln Stein  <lstein@cshl.org> (version 1.08)
+	* Fixed regression tests to be less sensitive to wormbase data changes.
+	
 2008-02-27  Lincoln Stein  <lstein@cshl.org> (version 1.07)
 	* Support LocationI interface, to prevent clashes with recent bioperl.
 

@@ -26,7 +26,7 @@ sub test ($$) {
 }
 
 sub bail {
-  for ($current+1..COUNT) {
+  for ($current+1..LAST) {
     print "not ok $_\n";
   }
   exit 0;
@@ -92,9 +92,15 @@ my @t = grep {  $_->method eq 'Coding_transcript'
 	      } $s->features(-category=>'transcription');
 test(17,@t);
 
-# see if the first one has some subseqfeatures
-my $t = $t[0] or bail;
-my @e = sort {$a->start<=>$b->start} $t->get_SeqFeatures or bail;
+# find the first one that has subfeatures
+my (@e,$t);
+for (@t) {
+    $t = $_;
+    @e = $_->get_SeqFeatures;
+    last if @e > 1;
+}
+$t or bail;
+@e = sort {$a->start<=>$b->start} @e;
 test(18,@e > 1);
 test(19,$t->compound);
 
