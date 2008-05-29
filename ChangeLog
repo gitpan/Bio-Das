@@ -1,3 +1,7 @@
+2008-05-28    Lincoln Stein  <lstein@cshl.org> (version 1.09)
+	* Fixed bugs in the render() method which prevented stylesheet
+	instructions for label and bumping to be ignored in some cases.
+	
 2008-05-19    Lincoln Stein  <lstein@cshl.org> (version 1.08)
 	* Fixed regression tests to be less sensitive to wormbase data changes.
 	

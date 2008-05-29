@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.17 2007/09/06 10:20:42 lstein Exp $
+# $Id: Segment.pm,v 1.18 2008/05/29 14:12:34 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -229,7 +229,7 @@ sub render {
   my @override = $options && CORE::ref($options) eq 'HASH' ? %$options : ();
   my @new_tracks;
 
-  my (%type_count,%tracks,$color);
+  my (%type_count,%tracks,%track_configs,$color);
   for my $feature ($self->features) {
     my $type = $feature->type;
 
@@ -239,41 +239,54 @@ sub render {
       $track->add_feature($feature);
       next;
     }
-    my ($glyph,@style) = $stylesheet->style($feature) if $stylesheet;
-    $glyph           ||= 'segments';
+    my ($glyph,%style)    = $stylesheet->style($feature) if $stylesheet;
+
+    $glyph              ||= 'segments';
 
     my @config = ( -glyph   => $glyph,         # really generic
 		   -bgcolor => $COLORS[$color++ % @COLORS],
 		   -label   => 1,
 		   -key     => $type,
-		   @style,                        # from stylesheet
+		   %style,                        # from stylesheet
 		   @override,                     # overridden
 		 );
 
+    $track_configs{$type} = \%style; # remember config for later
+
     if (defined($position_to_insert)) {
-      push @new_tracks,($tracks{$type} = $panel->insert_track($position_to_insert++,$feature,@config));
+      push @new_tracks,($tracks{$type} = 
+			$panel->insert_track($position_to_insert++,$feature,@config));
     } else {
-      push @new_tracks,($tracks{$type} = $panel->add_track($feature,@config));
+      push @new_tracks,($tracks{$type} = 
+			$panel->add_track($feature,@config));
     }
   }
 
   # reconfigure bumping, etc
   for my $type (keys %type_count) {
     my $type_count = $type_count{$type};
-    my $do_bump    =   $options == 0 ? $type_count <= $max_bump
+    my $do_bump    = defined $track_configs{$type}{-bump} ? $track_configs{$type}{-bump}
+                     : $options == 0 ? $type_count <= $max_bump
                      : $options == 1 ? 0
 		     : $options == 2 ? 1
 		     : $options == 3 ? 1
 		     : $options == 4 ? 2
 		     : $options == 5 ? 2
 		     : 0;
-    my $do_label   =   $options == 0 ? $type_count <= $max_label
+
+    my $maxed_out  = $type_count > $max_label;
+    my $conf_label = defined $track_configs{$type}{-label} 
+                             ? $track_configs{$type}{-label}
+                             : 1;
+    my $do_label   =   $options == 0 ? !$maxed_out && $conf_label
                      : $options == 3 ? 1
 		     : $options == 5 ? 1
 		     : 0;
+
     my $track = $tracks{$type};
 
     $track->configure(-connector  => 'none') if !$do_bump;
+
     $track->configure(-bump  => $do_bump,
 		      -label => $do_label);
   }

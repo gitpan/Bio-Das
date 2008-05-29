@@ -55,7 +55,7 @@ sub glyph {
   # my $zoom   = $cat->{$type}                  || $cat->{default} || {};
   (my $base = $type) =~ s/:.+$//;
   my $zoom   =  $self->{categories}{$category}{$type};
-  $zoom     ||= $self->{categories}{$category}{$base};
+  $zoom    ||= $self->{categories}{$category}{$base};
   $zoom    ||= $self->{categories}{'default'}{$type};
   $zoom    ||= $self->{categories}{'default'}{$base};
   $zoom    ||= $self->{categories}{'default'}{'default'};
