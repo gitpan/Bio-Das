@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.48 2008/05/29 14:12:34 lstein Exp $
+# $Id: Das.pm,v 1.49 2008/12/09 18:31:35 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -26,7 +26,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = ('Bio::Root::Root','Bio::DasI');
-$VERSION = '1.09';
+$VERSION = '1.10';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -200,7 +200,8 @@ sub make_fetcher {
   my $request = shift;
   return Bio::Das::HTTP::Fetch->new(
 				    -request   => $request,
-				    -headers   => {'Accept-encoding' => 'gzip'},
+				    -headers   => {'Accept-encoding' => 'gzip',
+                                                   'Cache-Control'   => 'no-cache'},
 				    -proxy     => $self->proxy || '',
 				    -norfcwarn => $self->no_rfc_warning,
 				   );
