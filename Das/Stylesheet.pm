@@ -43,11 +43,12 @@ sub glyph {
 
   my ($category,$type);
   if (ref $feature) {
-    $category = lc $feature->category;
-    $type     = lc $feature->type;
+    $category = eval {lc $feature->category};
+    $type     = eval {lc $feature->type};
   } else {
     $type     = $feature;
   }
+
   $category ||= 'default';
   $type     ||= 'default';
 
@@ -74,6 +75,8 @@ sub glyph {
   my ($zoom_glyph,@zoom_attributes)     = _format_glyph($zoom->{$zoomlevels[0]}) if $length;
   my %attributes = (@base_attributes,@zoom_attributes);
   $glyph = $zoom_glyph || $base_glyph;
+
+  # warn "stylesheet returning $glyph";
 
   return wantarray ? ($glyph,%attributes) : $glyph;
 }

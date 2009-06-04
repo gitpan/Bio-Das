@@ -1,3 +1,5 @@
+Thu Jun  4 17:55:47 EDT 2009 (version 1.11)
+	* Support DAS/1.5
 2008-05-28    Lincoln Stein  <lstein@cshl.org> (version 1.09)
 	* Fixed bugs in the render() method which prevented stylesheet
 	instructions for label and bumping to be ignored in some cases.

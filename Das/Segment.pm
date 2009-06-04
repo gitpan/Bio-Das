@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.18 2008/05/29 14:12:34 lstein Exp $
+# $Id: Segment.pm,v 1.19 2009/06/04 21:56:57 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -58,7 +58,6 @@ sub features {
   }
   return $das->features(@args,
 			-dsn => $dsn,
-#			-segment=> [$self->asString]);
 			-segment=> [$self]);
 }
 
@@ -102,6 +101,7 @@ sub types {
   my $self = shift;
   my $das = $self->das or return;
   my $dsn = $self->dsn or return;
+  warn "types caller = ",caller();
   return $das->types(@_,
 		     -dsn    => $dsn,
 		     -segment=> [$self->asString]);
@@ -233,25 +233,25 @@ sub render {
   for my $feature ($self->features) {
     my $type = $feature->type;
 
-
     $type_count{$type}++;
     if (my $track = $tracks{$type}) {
       $track->add_feature($feature);
       next;
     }
-    my ($glyph,%style)    = $stylesheet->style($feature) if $stylesheet;
 
-    $glyph              ||= 'segments';
+#    my ($glyph,%style)    = $stylesheet->style($feature) if $stylesheet;
+#    $glyph              ||= 'segments';
 
-    my @config = ( -glyph   => $glyph,         # really generic
-		   -bgcolor => $COLORS[$color++ % @COLORS],
-		   -label   => 1,
-		   -key     => $type,
-		   %style,                        # from stylesheet
-		   @override,                     # overridden
-		 );
+    my @config = (
+	-bgcolor    => $COLORS[$color++ % @COLORS],
+	-label      => 1,
+	-key        => $type,
+	-stylesheet => $stylesheet,
+#	%style,                        # from stylesheet
+#	@override,                     # overridden
+	);
 
-    $track_configs{$type} = \%style; # remember config for later
+#    $track_configs{$type} = \%style; # remember config for later
 
     if (defined($position_to_insert)) {
       push @new_tracks,($tracks{$type} = 
@@ -278,6 +278,7 @@ sub render {
     my $conf_label = defined $track_configs{$type}{-label} 
                              ? $track_configs{$type}{-label}
                              : 1;
+
     my $do_label   =   $options == 0 ? !$maxed_out && $conf_label
                      : $options == 3 ? 1
 		     : $options == 5 ? 1

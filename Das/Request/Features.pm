@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.13 2007/09/06 10:20:42 lstein Exp $
+# $Id: Features.pm,v 1.14 2009/06/04 21:56:57 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -86,13 +86,34 @@ sub t_SEGMENT {
 
 sub finish_segment {
   my $self = shift;
+  my $features = $self->build_object_hierarchy($self->{tmp}{features});
   if ($self->segment_callback) {
-    eval {$self->segment_callback->($self->{tmp}{current_segment}=>$self->{tmp}{features})};
+    eval {$self->segment_callback->($self->{tmp}{current_segment}=>$features)};
     warn $@ if $@;
   } else {
-    $self->add_object($self->{tmp}{current_segment},$self->{tmp}{features});
+    $self->add_object($self->{tmp}{current_segment},$features);
   }
   delete $self->{tmp}{current_segment};
+  delete $self->{tmp}{features};
+}
+
+# this builds up hierarchical objects using their parent/child relationships
+sub build_object_hierarchy {
+    my $self = shift;
+    my $f    = shift;
+    my %id_to_feature = map {$_->id => $_} @$f;
+
+    my @top_level;
+    for my $feature (@$f) {
+	my $parent_id = $feature->parent_id;
+	if (defined $parent_id
+	    && (my $parent = $id_to_feature{$parent_id})) {
+	    $parent->add_subfeature($feature);
+	} else {
+	    push @top_level,$feature;
+	}
+    }
+    return \@top_level;
 }
 
 sub cleanup {
@@ -191,6 +212,20 @@ sub t_METHOD {
     }
 
   }
+}
+
+sub t_PARENT {
+    my $self    = shift;
+    my $attrs   = shift;
+    my $feature = $self->{tmp}{current_feature} or return;
+    $feature->parent_id($attrs->{id}) if $attrs;
+}
+
+sub t_PART {
+    my $self    = shift;
+    my $attrs   = shift;
+    my $feature = $self->{tmp}{current_feature} or return;
+    $feature->add_child_id($attrs->{id}) if $attrs;
 }
 
 sub t_START {

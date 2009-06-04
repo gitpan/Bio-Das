@@ -226,6 +226,28 @@ sub phase {
   $d;
 }
 
+sub parent_id {
+    my $self = shift;
+    my $d    = $self->{parent};
+    $self->{parent} = shift if @_;
+    $d;
+}
+
+sub child_ids {
+    my $self = shift;
+    my $d    = $self->{children} ||= [];
+    $self->{children} = shift if @_;
+    return @$d;
+}
+
+sub add_child_id {
+    my $self  = shift;
+    my $child = shift;
+
+    $self->{children} ||= [];
+    push @{$self->{chidren}},$child;
+}
+
 sub group {
   my $self = shift;
   my $d = $self->{group};

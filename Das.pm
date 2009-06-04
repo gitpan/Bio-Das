@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.49 2008/12/09 18:31:35 lstein Exp $
+# $Id: Das.pm,v 1.50 2009/06/04 21:56:57 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -26,7 +26,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = ('Bio::Root::Root','Bio::DasI');
-$VERSION = '1.10';
+$VERSION = '1.11';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -447,7 +447,7 @@ sub features {
   my @results = $self->run_requests(\@request);
   $self->aggregate(\@aggregators,
 		   $results[0]->can('results') ? \@results : [\@results],
-		   $typehandler) if @aggregators && @results;
+		   $typehandler) if @results;
   return Bio::Das::FeatureIterator->new(\@results) if $iterator;
   return wantarray ? @results : $results[0];
 }
