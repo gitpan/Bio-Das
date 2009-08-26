@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.14 2009/06/04 21:56:57 lstein Exp $
+# $Id: Features.pm,v 1.15 2009/08/26 21:57:11 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -86,7 +86,10 @@ sub t_SEGMENT {
 
 sub finish_segment {
   my $self = shift;
+
+  $self->infer_parents_from_groups($self->{tmp}{features});
   my $features = $self->build_object_hierarchy($self->{tmp}{features});
+
   if ($self->segment_callback) {
     eval {$self->segment_callback->($self->{tmp}{current_segment}=>$features)};
     warn $@ if $@;
@@ -96,6 +99,47 @@ sub finish_segment {
   delete $self->{tmp}{current_segment};
   delete $self->{tmp}{features};
 }
+
+# for features that have a <group> but no parent or parts, 
+# create inferred parents
+sub infer_parents_from_groups {
+    my $self = shift;
+    my $f    = shift;
+
+    my (%inferred_parents,%group_types);
+    for my $feature (@$f) {
+
+	my $group  = $feature->group or next;
+	next if $feature->parent_id;
+	next if $feature->child_ids > 0;
+
+	$group = "group_$group";  # avoid collisions
+
+	unless ($inferred_parents{$group}) {
+	    my $p = $inferred_parents{$group} = Bio::Das::Feature->new(
+		                              -segment => $feature->segment,
+		                              -id      => $group,
+		                              -start   => $feature->start,
+                                              -stop    => $feature->stop
+			                   );
+	    $p->orientation($feature->orientation);
+	    $p->category('group');
+	    my $type = $group_types{$feature->group_type} 
+	           ||= Bio::Das::Type->new($feature->group_type,$feature->group_type,'group');
+	    $p->type($type);
+	    $p->link($feature->link);
+	    $p->label($feature->group_label);
+	}
+
+	my $p = $inferred_parents{$group};
+	$p->start($feature->start) if $feature->start < $p->start;
+	$p->stop($feature->stop)   if $feature->stop  > $p->stop;
+	$feature->parent_id($group);
+	$p->add_child_id($feature->id);
+    }
+    push @$f,values %inferred_parents;
+}
+
 
 # this builds up hierarchical objects using their parent/child relationships
 sub build_object_hierarchy {
@@ -147,13 +191,13 @@ sub t_FEATURE {
   else {
     # feature is ending. This would be the place to do group aggregation
     my $feature = $self->{tmp}{current_feature};
-    my $cft = $feature->type;
+    my $cft     = $feature->type;
 
     if (!$cft->complete) {
       # fix up broken das servers that don't set a method
       # the id and method will be set to the same value
-      $cft->id($cft->method) if $cft->method;
-      $cft->method($cft->id) if $cft->id;
+      $cft->id($cft->method) if $cft->method && !$cft->id;
+      $cft->method($cft->id) if $cft->id     && !$cft->method;
     }
 
     if (my $callback = $self->callback) {

@@ -20,7 +20,7 @@ $VERSION = '0.91';
 # aliases for Ace::Sequence::Feature compatibility
 *subtype   = \&method;
 *segments  = *sub_seqFeature = \&get_SeqFeatures;
-*display_id= *info      = *display_name   = \&label;
+*display_id= *info      = \&label;
 *seq_id    = \&refseq;
 *make_link = \&link;
 *desc      = \&description;
@@ -75,6 +75,11 @@ sub stop {
 sub length {my $self = shift; $self->stop-$self->start+1}
 
 sub refseq { shift->segment->refseq }
+
+sub display_name {
+    my $self = shift;
+    return $self->label || $self->group_label || $self->id;
+}
 
 sub id {
   my $self = shift;
@@ -196,7 +201,7 @@ sub method {
 sub category {
   my $self = shift;
   my $type = $self->type or return;
-  eval {$type->category} || $type->method;
+  return eval {$type->category}||'';
 }
 
 sub reference {
@@ -235,7 +240,7 @@ sub parent_id {
 
 sub child_ids {
     my $self = shift;
-    my $d    = $self->{children} ||= [];
+    my $d    = ($self->{children} ||= []);
     $self->{children} = shift if @_;
     return @$d;
 }
@@ -245,7 +250,7 @@ sub add_child_id {
     my $child = shift;
 
     $self->{children} ||= [];
-    push @{$self->{chidren}},$child;
+    push @{$self->{children}},$child;
 }
 
 sub group {

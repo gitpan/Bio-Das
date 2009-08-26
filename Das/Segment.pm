@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.19 2009/06/04 21:56:57 lstein Exp $
+# $Id: Segment.pm,v 1.20 2009/08/26 21:57:11 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -101,7 +101,6 @@ sub types {
   my $self = shift;
   my $das = $self->das or return;
   my $dsn = $self->dsn or return;
-  warn "types caller = ",caller();
   return $das->types(@_,
 		     -dsn    => $dsn,
 		     -segment=> [$self->asString]);
@@ -226,12 +225,21 @@ sub render {
   my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
 
   my $stylesheet = $self->das->stylesheet;
+
   my @override = $options && CORE::ref($options) eq 'HASH' ? %$options : ();
   my @new_tracks;
 
   my (%type_count,%tracks,%track_configs,$color);
-  for my $feature ($self->features) {
-    my $type = $feature->type;
+  my @f = $self->features;
+  for my $feature (@f) {
+
+      #warn "rendering $feature type = ",$feature->type," category = ",$feature->category;
+      #warn "subtypes = ",join ' ',map {$_->type} $feature->get_SeqFeatures;
+
+    my $type      = $feature->type;
+    my $track_key = $type;
+    my $label     = $type->label || $type->method_label;
+    $track_key   .= ": ".$label if $label;
 
     $type_count{$type}++;
     if (my $track = $tracks{$type}) {
@@ -239,27 +247,26 @@ sub render {
       next;
     }
 
-#    my ($glyph,%style)    = $stylesheet->style($feature) if $stylesheet;
-#    $glyph              ||= 'segments';
 
     my @config = (
 	-bgcolor    => $COLORS[$color++ % @COLORS],
 	-label      => 1,
-	-key        => $type,
+	-key        => $track_key,
 	-stylesheet => $stylesheet,
-#	%style,                        # from stylesheet
-#	@override,                     # overridden
+	-glyph      => 'line',
 	);
 
-#    $track_configs{$type} = \%style; # remember config for later
 
-    if (defined($position_to_insert)) {
-      push @new_tracks,($tracks{$type} = 
-			$panel->insert_track($position_to_insert++,$feature,@config));
-    } else {
-      push @new_tracks,($tracks{$type} = 
-			$panel->add_track($feature,@config));
-    }
+      eval {
+	  if (defined($position_to_insert)) {
+	      push @new_tracks,($tracks{$type} = 
+				$panel->insert_track($position_to_insert++,$feature,@config));
+	  } else {
+	      push @new_tracks,($tracks{$type} = 
+				$panel->add_track($feature,@config));
+	  }
+      };
+      warn $@ if $@;
   }
 
   # reconfigure bumping, etc
@@ -283,13 +290,14 @@ sub render {
                      : $options == 3 ? 1
 		     : $options == 5 ? 1
 		     : 0;
+    # warn "type = $type, label = $do_label, do_bump = $do_bump";
 
     my $track = $tracks{$type};
 
-    $track->configure(-connector  => 'none') if !$do_bump;
-
-    $track->configure(-bump  => $do_bump,
-		      -label => $do_label);
+    my $factory = $track->factory;
+    $factory->set_option(connector  => 'none') if !$do_bump;
+    $factory->set_option(bump       => $do_bump);
+    $factory->set_option(label      => $do_label);
   }
   my $track_count = keys %tracks;
   return wantarray ? ($track_count,$panel,\@new_tracks) : $track_count;

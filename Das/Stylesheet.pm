@@ -3,9 +3,12 @@ package Bio::Das::Stylesheet;
 use strict;
 
 use Carp 'croak';
+use Memoize;
 
 use vars qw($VERSION);
 $VERSION = '1.00';
+
+memoize('glyph');
 
 
 #
@@ -49,11 +52,9 @@ sub glyph {
     $type     = $feature;
   }
 
-  $category ||= 'default';
+  $category = 'default' unless $self->{categories}{$category};
   $type     ||= 'default';
 
-  # my $cat    = $self->{categories}{$category} || $self->{categories}{default};
-  # my $zoom   = $cat->{$type}                  || $cat->{default} || {};
   (my $base = $type) =~ s/:.+$//;
   my $zoom   =  $self->{categories}{$category}{$type};
   $zoom    ||= $self->{categories}{$category}{$base};
@@ -71,12 +72,28 @@ sub glyph {
 	                 : $_ eq 'high' ? [$_ => $self->highzoom]
 		         : [$_ => $_ || 0] } keys %$zoom;
 
+
   my ($base_glyph,@base_attributes)     = _format_glyph($zoom->{$zoomlevels[-1]});
   my ($zoom_glyph,@zoom_attributes)     = _format_glyph($zoom->{$zoomlevels[0]}) if $length;
   my %attributes = (@base_attributes,@zoom_attributes);
   $glyph = $zoom_glyph || $base_glyph;
 
-  # warn "stylesheet returning $glyph";
+  # MUNGES!!!
+  if ($glyph eq 'anchored_arrow') { # because the default looks ugly
+      $glyph = 'box';
+      push @base_attributes,(-stranded=>1,
+			     -arrowhead=>'filled');
+  }
+
+  if ($glyph eq 'line') {
+      my $line_type = $attributes{line_style} || $attributes{style};
+      $glyph        = 'hat'         if $line_type eq 'hat';
+      $glyph        = 'dashed_line' if $line_type eq 'dashed';
+  }
+
+
+  # warn "stylesheet for $feature returning $glyph ",join ' ',%attributes;
+  # warn "category=$category, type=$type, glyph=$glyph";
 
   return wantarray ? ($glyph,%attributes) : $glyph;
 }
@@ -105,6 +122,8 @@ sub add_type {
 							    attr => $attributes,  # a hashref
 						 };
   $self->{categories}{'default'}{lc $type}{lc $zoom} = $self->{categories}{lc $category}{lc $type}{lc $zoom};
+  # this works around the bug of gff types with no category
+  $self->{categories}{''}{lc $type} = $self->{categories}{lc $category}{lc $type};
 }
 
 sub lowzoom {
