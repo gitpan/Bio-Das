@@ -1,8 +1,14 @@
-Fri Jun 11 12:37:46 EDT 2010, version 1.15
+Version 1.16 Mon Jun 21 13:32:56 EDT 2010
+	* Fixed aggregation of groups so that type of parent is correct. This
+	fixes gbrowse client issues.
+	
+Version 1.15 Fri Jun 11 12:37:46 EDT 2010, 
 	* Skip some regression tests because test server not currently running.
+	
 Version 1.14
 	* When the Bio::Graphics render() method is called, the stylesheet will be cached
 	for a (hard-coded) five minute period. This makes subsequent operations faster.
+	
 Wed Aug 26 17:56:08 EDT 2009
 	* Support part of DAS/1.6
 	* Fix stylesheet bugs

@@ -1,5 +1,5 @@
 package Bio::Das::Request::Features;
-# $Id: Features.pm,v 1.15 2009/08/26 21:57:11 lstein Exp $
+# $Id: Features.pm,v 1.16 2010/06/16 21:28:41 lstein Exp $
 # this module issues and parses the types command, with arguments -dsn, -segment, -categories, -enumerate
 
 use strict;
@@ -124,11 +124,12 @@ sub infer_parents_from_groups {
 			                   );
 	    $p->orientation($feature->orientation);
 	    $p->category('group');
-	    my $type = $group_types{$feature->group_type} 
-	           ||= Bio::Das::Type->new($feature->group_type,$feature->group_type,'group');
+	    my $gt   = $feature->group_type || $feature->type;
+	    my $type = $group_types{$gt} 
+	           ||= Bio::Das::Type->new($gt,$gt,'group');
 	    $p->type($type);
 	    $p->link($feature->link);
-	    $p->label($feature->group_label);
+	    $p->label($feature->label);
 	}
 
 	my $p = $inferred_parents{$group};

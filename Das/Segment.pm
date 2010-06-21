@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.23 2009/09/02 19:59:39 lstein Exp $
+# $Id: Segment.pm,v 1.24 2010/06/16 21:28:41 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -63,6 +63,12 @@ sub features {
   return $das->features(@args,
 			-dsn => $dsn,
 			-segment=> [$self]);
+}
+
+sub get_seq_stream {
+    my $self = shift;
+    my @args = @_;
+    return $self->features(@args,-iterator=>1);
 }
 
 sub source_tag {

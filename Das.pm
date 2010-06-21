@@ -1,5 +1,5 @@
 package Bio::Das;
-# $Id: Das.pm,v 1.52 2009/09/02 19:57:59 lstein Exp $
+# $Id: Das.pm,v 1.54 2010/06/21 17:35:01 lstein Exp $
 
 # prototype parallel-fetching Das
 
@@ -26,7 +26,7 @@ use IO::Select;
 use vars '$VERSION';
 use vars '@ISA';
 @ISA     = ('Bio::Root::Root','Bio::DasI');
-$VERSION = '1.15';
+$VERSION = '1.16';
 
 *feature2segment = *fetch_feature_by_name = \&get_feature_by_name;
 my @COLORS = qw(cyan blue red yellow green wheat turquoise orange);
@@ -108,7 +108,6 @@ sub add_aggregator {
     my @args = (-method    => $agg_name,
 		-sub_parts => \@subparts);
     push @args,(-main_method => $mainpart) if $mainpart;
-    warn "making an aggregator with (@args), subparts = @subparts" if $self->debug;
     require Bio::DB::GFF::Aggregator;
     push @$list,Bio::DB::GFF::Aggregator->new(@args);
   }
@@ -389,7 +388,8 @@ sub refclass { 'Segment' }
 sub features {
   my $self = shift;
   my ($dsn,$segments,$types,$categories,
-      $fcallback,$scallback,$feature_id,$group_id,$iterator,$rangetype)
+      $fcallback,$scallback,$feature_id,$group_id,$iterator,$rangetype,
+      $seqid,$start,$end)
                                  = rearrange([['dsn','dsns'],
 			                      ['segment','segments'],
 					      ['type','types'],
@@ -400,14 +400,22 @@ sub features {
                                               'group_id',
 					      'iterator',
 					      'rangetype',
+					      'seq_id',
+					      'start',
+					      'end',
 					     ],@_);
 
+  $dsn ||= $self->default_url;
   croak "must provide -dsn argument" unless $dsn;
   my @dsn = ref $dsn && ref $dsn eq 'ARRAY' ? @$dsn : $dsn;
 
   $rangetype ||= 'overlaps';
   $self->throw('DAS/1 only supports range queries of type "overlaps"')
     unless $rangetype eq 'overlaps';
+
+  if (!$segments && $seqid) {
+      $segments = [$self->segment($seqid,$start,$end)];
+  }
 
   # handle types
   my @aggregators;
@@ -450,6 +458,12 @@ sub features {
 		   $typehandler) if @results;
   return Bio::Das::FeatureIterator->new(\@results) if $iterator;
   return wantarray ? @results : $results[0];
+}
+
+sub get_seq_stream {
+    my $self = shift;
+    my @args = @_;
+    return $self->features(@args,-iterator=>1);
 }
 
 sub search_notes { }
