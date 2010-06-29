@@ -8,7 +8,7 @@ use Memoize;
 use vars qw($VERSION);
 $VERSION = '1.00';
 
-memoize('glyph');
+memoize('_glyph');
 
 
 #
@@ -32,11 +32,12 @@ sub categories {
 # in a scalar context, return name of glyph
 # in array context, return name of glyph followed by attribute/value pairs
 sub glyph {
-  local $^W = 0;
-
   my $self    = shift;
   my $feature = shift;
   my $length  = shift || 0;
+
+  local $^W = 0;
+
   unless ($length =~ /^\d+$/) {
     $length = $length eq 'low' ? $self->lowzoom : $self->highzoom;
   }
@@ -52,20 +53,27 @@ sub glyph {
     $type     = $feature;
   }
 
-  $category = 'default' unless $self->{categories}{$category};
-  $type     ||= 'default';
+    return $self->_glyph($category,$type,$length);
+}
 
-  (my $base = $type) =~ s/:.+$//;
-  my $zoom   =  $self->{categories}{$category}{$type};
-  $zoom    ||= $self->{categories}{$category}{$base};
-  $zoom    ||= $self->{categories}{'default'}{$type};
-  $zoom    ||= $self->{categories}{'default'}{$base};
-  $zoom    ||= $self->{categories}{'default'}{'default'};
+sub _glyph {
+    my $self = shift;
+    my ($category,$type,$length) = @_;
 
-  my $glyph;
+    $category = 'default' unless $self->{categories}{$category};
+    $type     ||= 'default';
 
-  # find the best zoom level -- this is a Schwartzian Transform
-  my @zoomlevels = map  {$_->[0]}
+    (my $base = $type) =~ s/:.+$//;
+    my $zoom   =  $self->{categories}{$category}{$type};
+    $zoom    ||= $self->{categories}{$category}{$base};
+    $zoom    ||= $self->{categories}{'default'}{$type};
+    $zoom    ||= $self->{categories}{'default'}{$base};
+    $zoom    ||= $self->{categories}{'default'}{'default'};
+
+    my $glyph;
+
+    # find the best zoom level -- this is a Schwartzian Transform
+    my @zoomlevels = map  {$_->[0]}
                    sort {$b->[1]<=>$a->[1]}
                    grep {!$length or $_->[1] <= $length}
                    map  {  $_ eq 'low'  ? [$_ => $self->lowzoom]
@@ -73,29 +81,30 @@ sub glyph {
 		         : [$_ => $_ || 0] } keys %$zoom;
 
 
-  my ($base_glyph,@base_attributes)     = _format_glyph($zoom->{$zoomlevels[-1]});
-  my ($zoom_glyph,@zoom_attributes)     = _format_glyph($zoom->{$zoomlevels[0]}) if $length;
-  my %attributes = (@base_attributes,@zoom_attributes);
-  $glyph = $zoom_glyph || $base_glyph;
+    my ($base_glyph,@base_attributes)     = _format_glyph($zoom->{$zoomlevels[-1]});
+    my ($zoom_glyph,@zoom_attributes)     = _format_glyph($zoom->{$zoomlevels[0]}) if $length;
+    my %attributes = (@base_attributes,@zoom_attributes);
+    $glyph = $zoom_glyph || $base_glyph;
 
-  # MUNGES!!!
-  if ($glyph eq 'anchored_arrow') { # because the default looks ugly
-      $glyph = 'box';
-      push @base_attributes,(-stranded=>1,
-			     -arrowhead=>'filled');
-  }
 
-  if ($glyph eq 'line') {
+    # MUNGES!!!
+    if ($glyph eq 'anchored_arrow') { # because the default looks ugly
+	$glyph = 'box';
+	push @base_attributes,(-stranded=>1,
+			       -arrowhead=>'filled');
+    }
+    
+    if ($glyph eq 'line') {
       my $line_type = $attributes{line_style} || $attributes{style};
       $glyph        = 'hat'         if $line_type eq 'hat';
       $glyph        = 'dashed_line' if $line_type eq 'dashed';
-  }
+    }
 
 
-  # warn "stylesheet for $feature returning $glyph ",join ' ',%attributes;
-  # warn "category=$category, type=$type, glyph=$glyph";
+    # warn "stylesheet for $feature returning $glyph ",join ' ',%attributes;
+    # warn "category=$category, type=$type, glyph=$glyph";
 
-  return wantarray ? ($glyph,%attributes) : $glyph;
+    return wantarray ? ($glyph,%attributes) : $glyph;
 }
 
 # turn configuration into a set of -name=>value pairs suitable for add_track()

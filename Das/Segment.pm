@@ -1,6 +1,6 @@
 package Bio::Das::Segment;
 
-# $Id: Segment.pm,v 1.24 2010/06/16 21:28:41 lstein Exp $
+# $Id: Segment.pm,v 1.26 2010/06/29 19:42:48 lstein Exp $
 use strict;
 use Bio::Root::Root;
 use Bio::Das::SegmentI;
@@ -20,6 +20,8 @@ use overload '""' => 'asString';
 *abs_end   = *stop   = \&end;
 *abs_strand= \&strand;
 *toString = \&asString;
+
+use constant DEBUG=>0;
 
 sub new {
   my $pack = shift;
@@ -249,8 +251,8 @@ sub render {
   my @f = $self->features;
   for my $feature (@f) {
 
-      #warn "rendering $feature type = ",$feature->type," category = ",$feature->category;
-      #warn "subtypes = ",join ' ',map {$_->type} $feature->get_SeqFeatures;
+      warn "rendering $feature type = ",$feature->type," category = ",$feature->category if DEBUG;
+      warn "subtypes = ",join ' ',map {$_->type} $feature->get_SeqFeatures if DEBUG;
 
     my $type      = $feature->type;
     my $track_key = $type;
@@ -262,7 +264,6 @@ sub render {
       $track->add_feature($feature);
       next;
     }
-
 
     my @config = (
 	-bgcolor    => $COLORS[$color++ % @COLORS],
@@ -288,7 +289,6 @@ sub render {
   # reconfigure bumping, etc
   for my $type (keys %type_count) {
     my $type_count = $type_count{$type};
-    warn "$type => $type_count";
     my $do_bump    = defined $track_configs{$type}{-bump} ? $track_configs{$type}{-bump}
                                                           : $options == 0 ? $type_count <= $max_bump
 							  : $options == 1 ? 0
@@ -315,9 +315,6 @@ sub render {
     $factory->set_option(connector  => 'none') if !$do_bump;
     $factory->set_option(bump       => $do_bump);
     $factory->set_option(label      => $do_label);
-
-    warn "bumping = $do_bump";
-    warn "label   = $do_label";
   }
   my $track_count = keys %tracks;
   return wantarray ? ($track_count,$panel,\@new_tracks) : $track_count;

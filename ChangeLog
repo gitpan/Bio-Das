@@ -1,3 +1,7 @@
+Version 1.17 Tue Jun 29 15:42:08 EDT 2010
+	* Improved stylesheet generation: fixed a bug involving memoization of 
+	the glyph() routine that was returning the wrong glyph in some circumstances.
+	
 Version 1.16 Mon Jun 21 13:32:56 EDT 2010
 	* Fixed aggregation of groups so that type of parent is correct. This
 	fixes gbrowse client issues.
